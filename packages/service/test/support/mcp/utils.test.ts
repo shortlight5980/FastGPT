@@ -161,7 +161,8 @@ describe('workflow2InputSchema', () => {
 describe('getMcpServerTools', () => {
   it('should return tools list', async () => {
     const mockMcp = {
-      tmbId: 'test-tmb',
+      teamId: '000000000000000000000001',
+      tmbId: '000000000000000000000002',
       apps: [
         {
           appId: 'test-app',
@@ -206,7 +207,8 @@ describe('getMcpServerTools', () => {
 
   it('should use MCP key bindings as runtime tool snapshot', async () => {
     const mockMcp = {
-      tmbId: 'test-tmb',
+      teamId: '000000000000000000000001',
+      tmbId: '000000000000000000000002',
       apps: [
         {
           appId: 'test-app',

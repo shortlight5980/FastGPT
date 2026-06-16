@@ -1,16 +1,11 @@
-import React, { type ReactNode, useCallback, useState } from 'react';
+import React, { type ReactNode, useState } from 'react';
 import { createContext } from 'use-context-selector';
 import type { EditTeamFormDataType } from './EditInfoModal';
 import dynamic from 'next/dynamic';
-import {
-  getTeamList,
-  getTeamMemberCount,
-  getTeamMembers,
-  putSwitchTeam
-} from '@/web/support/user/team/api';
+import { getTeamList, getTeamMemberCount, putSwitchTeam } from '@/web/support/user/team/api';
 import { TeamMemberStatusEnum } from '@fastgpt/global/support/user/team/constant';
 import { useUserStore } from '@/web/support/user/useUserStore';
-import type { TeamTmbItemType, TeamMemberItemType } from '@fastgpt/global/support/user/team/type';
+import type { TeamTmbItemType } from '@fastgpt/global/support/user/team/type';
 import { useRequest } from '@fastgpt/web/hooks/useRequest';
 import { useTranslation } from 'next-i18next';
 import { useRouter } from 'next/router';
@@ -32,10 +27,10 @@ type TeamModalContextType = {
 export const TeamContext = createContext<TeamModalContextType>({
   myTeams: [],
   isLoading: false,
-  onSwitchTeam: function (_teamId: string): void {
+  onSwitchTeam: function (): void {
     throw new Error('Function not implemented.');
   },
-  setEditTeamData: function (_value: React.SetStateAction<EditTeamFormDataType | undefined>): void {
+  setEditTeamData: function (): void {
     throw new Error('Function not implemented.');
   },
   refetchTeams: function (): void {
@@ -54,6 +49,7 @@ export const TeamModalContextProvider = ({ children }: { children: ReactNode }) 
   const [editTeamData, setEditTeamData] = useState<EditTeamFormDataType>();
   const { userInfo, initUserInfo } = useUserStore();
   const { resetChatCache } = useChatStore();
+  const isTeamAccountDeletionPending = !!userInfo?.teamAccountDeletion;
 
   const {
     data: myTeams = [],
@@ -65,8 +61,8 @@ export const TeamModalContextProvider = ({ children }: { children: ReactNode }) 
   });
 
   const { data: teamMemberCountData, refresh: refetchTeamSize } = useRequest(getTeamMemberCount, {
-    manual: false,
-    refreshDeps: [userInfo?.team?.teamId]
+    manual: isTeamAccountDeletionPending,
+    refreshDeps: [userInfo?.team?.teamId, isTeamAccountDeletionPending]
   });
 
   const { runAsync: onSwitchTeam, loading: isSwitchingTeam } = useRequest(

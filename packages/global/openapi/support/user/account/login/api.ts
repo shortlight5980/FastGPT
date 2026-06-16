@@ -97,6 +97,22 @@ export const WecomGetRedirectURLResponseSchema = z.string();
 export type WecomGetRedirectURLBodyType = z.infer<typeof WecomGetRedirectURLBodySchema>;
 export type WecomGetRedirectURLResponseType = z.infer<typeof WecomGetRedirectURLResponseSchema>;
 
+/* ===== SSO Login ===== */
+export const SsoGetRedirectURLBodySchema = z.object({
+  redirectUri: z.string().meta({
+    description: 'OAuth 回调地址'
+  }),
+  isWecomWorkTerminal: z.boolean().optional().meta({
+    description: '是否处于企业微信客户端'
+  }),
+  state: z.string().optional().meta({
+    description: 'OAuth state，注销验证等流程用于绑定一次性授权状态'
+  })
+});
+export const SsoGetRedirectURLResponseSchema = z.string();
+export type SsoGetRedirectURLBodyType = z.infer<typeof SsoGetRedirectURLBodySchema>;
+export type SsoGetRedirectURLResponseType = z.infer<typeof SsoGetRedirectURLResponseSchema>;
+
 // ===== OAuth Login =====
 export const OauthLoginBodySchema = TrackRegisterParamsSchema.extend({
   type: z.enum(OAuthEnum).meta({ description: 'OAuth 登录类型' }),

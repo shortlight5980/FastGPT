@@ -3,6 +3,7 @@ import { TeamMemberRoleEnum, TeamMemberStatusEnum } from './constant';
 import type { GroupMemberRole } from '../../permission/memberGroup/constant';
 import { TeamPermission } from '../../permission/user/controller';
 import { z } from 'zod';
+import { AccountDeletionStatusEnum } from '../accountDeletion/constants';
 
 export const OpenaiAccountSchema = z.object({
   key: z.string(),
@@ -58,11 +59,20 @@ export const TeamTmbItemSchema = ThidPartyAccountSchema.extend({
   avatar: z.string(),
   balance: z.number().optional(),
   tmbId: z.string(),
-  role: z.enum(TeamMemberRoleEnum),
+  teamDomain: z.string().optional(),
+  role: z.enum(TeamMemberRoleEnum).optional(),
   status: z.enum(TeamMemberStatusEnum),
   notificationAccount: z.string().optional(),
   permission: z.instanceof(TeamPermission),
-  isWecomTeam: z.boolean().optional()
+  isWecomTeam: z.boolean().optional(),
+  accountDeletion: z
+    .object({
+      status: z.enum([AccountDeletionStatusEnum.pending, AccountDeletionStatusEnum.finalizing]),
+      requestedAt: z.date(),
+      scheduledDeleteAt: z.date(),
+      ownerUserId: z.string()
+    })
+    .optional()
 });
 export type TeamTmbItemType = z.infer<typeof TeamTmbItemSchema>;
 

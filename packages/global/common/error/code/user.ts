@@ -6,7 +6,8 @@ export enum UserErrEnum {
   userExist = 'userExist',
   unAuthRole = 'unAuthRole',
   account_psw_error = 'account_psw_error',
-  unAuthSso = 'unAuthSso'
+  unAuthSso = 'unAuthSso',
+  accountDeletionPending = 'accountDeletionPending'
 }
 const errList = [
   {
@@ -24,6 +25,10 @@ const errList = [
   {
     statusText: UserErrEnum.unAuthSso,
     message: i18nT('user:sso_auth_failed')
+  },
+  {
+    statusText: UserErrEnum.accountDeletionPending,
+    message: i18nT('common:code_error.account_deletion_pending')
   }
 ];
 export default errList.reduce((acc, cur, index) => {

@@ -106,6 +106,9 @@ export type FastGPTFeConfigsType = {
     };
     wecom?: boolean;
   };
+  accountCancellation?: {
+    enabled?: boolean;
+  };
   limit?: {
     exportDatasetLimitMinutes?: number;
     websiteSyncLimitMinuted?: number;

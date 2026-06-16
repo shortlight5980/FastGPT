@@ -7,6 +7,14 @@ import { UserStatusEnum } from '@fastgpt/global/support/user/constant';
 import { pushTrack } from '@fastgpt/service/common/middle/tracks/utils';
 import { initTeamFreePlan } from '@fastgpt/service/support/wallet/sub/utils';
 import { Call } from '@test/utils/request';
+import { MongoAccountDeletion } from '@fastgpt/service/support/user/accountDeletion/schema';
+import { AccountDeletionStatusEnum } from '@fastgpt/global/support/user/accountDeletion/constants';
+
+const authCertMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@fastgpt/service/support/permission/auth/common', () => ({
+  authCert: authCertMock
+}));
 
 describe('tokenLogin API', () => {
   let testUser: any;
@@ -34,6 +42,12 @@ describe('tokenLogin API', () => {
       lastLoginTmbId: testTmb._id
     });
     vi.clearAllMocks();
+    authCertMock.mockResolvedValue({
+      userId: String(testUser._id),
+      teamId: String(testTeam._id),
+      tmbId: String(testTmb._id),
+      isRoot: false
+    });
   });
 
   it('should return user detail on valid token', async () => {
@@ -138,8 +152,96 @@ describe('tokenLogin API', () => {
   });
 
   it('should reject request without authentication', async () => {
+    authCertMock.mockRejectedValueOnce(new Error('unAuthorization'));
+
     const res = await Call(tokenLoginApi.default, {});
 
     expect(res.code).toBe(500);
+  });
+
+  it('passes account-deletion allow flags to authCert', async () => {
+    await Call(tokenLoginApi.default, {
+      auth: {
+        userId: String(testUser._id),
+        teamId: String(testTeam._id),
+        tmbId: String(testTmb._id),
+        isRoot: false,
+        sessionId: 'session123'
+      } as any
+    });
+
+    expect(authCertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authToken: true,
+        allowUserAccountDeletionPending: true,
+        allowCurrentUserOwnedTeamAccountDeletionPending: true,
+        allowCurrentSessionTeamAccountDeletionPending: true
+      })
+    );
+  });
+
+  it('returns current team account deletion state for non-owner members of an owner-pending team', async () => {
+    const owner = await MongoUser.create({
+      username: 'owner-pending-token@example.com',
+      password: 'testpassword',
+      status: UserStatusEnum.active
+    });
+    const team = await MongoTeam.create({
+      name: 'Owner Pending Team',
+      ownerId: owner._id
+    });
+    const ownerTmb = await MongoTeamMember.create({
+      teamId: team._id,
+      userId: owner._id,
+      status: 'active',
+      role: 'owner'
+    });
+    const member = await MongoUser.create({
+      username: 'member-pending-token@example.com',
+      password: 'testpassword',
+      status: UserStatusEnum.active,
+      lastLoginTmbId: testTmb._id
+    });
+    const memberTmb = await MongoTeamMember.create({
+      teamId: team._id,
+      userId: member._id,
+      status: 'active',
+      role: 'member'
+    });
+    await MongoAccountDeletion.create({
+      userId: owner._id,
+      usernameSnapshot: owner.username,
+      status: AccountDeletionStatusEnum.pending,
+      requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+      scheduledDeleteAt: new Date('2026-06-16T00:00:00.000Z'),
+      ownerTeamIds: [team._id]
+    });
+
+    authCertMock.mockResolvedValueOnce({
+      userId: String(member._id),
+      teamId: String(team._id),
+      tmbId: String(memberTmb._id),
+      isRoot: false
+    });
+
+    const res = await Call(tokenLoginApi.default, {
+      auth: {
+        userId: String(member._id),
+        teamId: String(team._id),
+        tmbId: String(memberTmb._id),
+        isRoot: false,
+        sessionId: 'session456'
+      } as any
+    });
+
+    expect(res.code).toBe(200);
+    expect(res.data.teamAccountDeletion).toMatchObject({
+      status: AccountDeletionStatusEnum.pending,
+      ownerUserId: String(owner._id),
+      requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+      scheduledDeleteAt: new Date('2026-06-16T00:00:00.000Z')
+    });
+    expect(res.data.accountDeletion).toBeUndefined();
+    expect(ownerTmb).toBeTruthy();
   });
 });

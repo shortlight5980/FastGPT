@@ -22,7 +22,13 @@ import {
 } from '@fastgpt/global/core/ai/provider';
 import { getMyModels, getOperationalAd } from './api';
 
-type LoginStoreType = { provider: OAuthEnum; lastRoute: string; state: string; lastTmbId?: string };
+export type LoginStoreType = {
+  provider: OAuthEnum;
+  lastRoute: string;
+  state: string;
+  lastTmbId?: string;
+  authType?: 'login' | 'accountCancellation';
+};
 
 export type NotSufficientModalType =
   | TeamErrEnum.datasetSizeNotEnough
@@ -43,6 +49,7 @@ type State = {
 
   loginStore?: LoginStoreType;
   setLoginStore: (e?: LoginStoreType) => void;
+  loginStoreHydrated: boolean;
 
   loading: boolean;
   setLoading: (val: boolean) => null;
@@ -119,6 +126,7 @@ export const useSystemStore = create<State>()(
             state.loginStore = e;
           });
         },
+        loginStoreHydrated: false,
         loading: false,
         setLoading: (val: boolean) => {
           set((state) => {
@@ -264,6 +272,11 @@ export const useSystemStore = create<State>()(
       })),
       {
         name: 'globalStore',
+        onRehydrateStorage: () => (state) => {
+          if (state) {
+            state.loginStoreHydrated = true;
+          }
+        },
         partialize: (state) => ({
           gitStar: state.gitStar,
 

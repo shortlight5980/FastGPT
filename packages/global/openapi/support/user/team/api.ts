@@ -1,5 +1,47 @@
 import z from 'zod';
-import { OpenaiAccountSchema } from '../../../../support/user/team/type';
+import { TeamMemberStatusEnum } from '../../../../support/user/team/constant';
+import { OpenaiAccountSchema, TeamTmbItemSchema } from '../../../../support/user/team/type';
+
+/* ============================================================================
+ * API: 获取用户团队列表
+ * Route: GET /proApi/support/user/team/list
+ * Method: GET
+ * Description: 获取当前用户加入的团队列表，包含 owner 已申请注销但不可切换进入的团队
+ * Tags: ['User', 'Team', 'Read']
+ * ============================================================================ */
+export const UserTeamListQuerySchema = z.object({
+  status: z.enum(TeamMemberStatusEnum).optional().meta({
+    example: TeamMemberStatusEnum.active,
+    description: '团队成员状态筛选'
+  })
+});
+
+export const UserTeamListResponseSchema = z.array(TeamTmbItemSchema);
+
+export type UserTeamListQueryType = z.infer<typeof UserTeamListQuerySchema>;
+export type UserTeamListResponseType = z.infer<typeof UserTeamListResponseSchema>;
+
+/* ============================================================================
+ * API: 切换当前团队
+ * Route: PUT /proApi/support/user/team/switch
+ * Method: PUT
+ * Description: 将当前登录会话切换到指定团队
+ * Tags: ['User', 'Team', 'Write']
+ * ============================================================================ */
+export const SwitchTeamBodySchema = z.object({
+  teamId: z.string().meta({
+    example: '68ad85a7463006c963799a05',
+    description: '要切换到的团队 ID'
+  })
+});
+
+export const SwitchTeamResponseSchema = z.string().meta({
+  example: 'userId:sessionId',
+  description: '切换团队后生成的新登录 token'
+});
+
+export type SwitchTeamBodyType = z.infer<typeof SwitchTeamBodySchema>;
+export type SwitchTeamResponseType = z.infer<typeof SwitchTeamResponseSchema>;
 
 export const TeamChangeOwnerBodySchema = z.object({
   userId: z.string().describe("the New Owner's UserId.")

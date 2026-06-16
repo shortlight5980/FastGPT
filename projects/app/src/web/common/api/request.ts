@@ -7,6 +7,7 @@ import axios, {
 import { clearToken } from '@/web/support/user/auth';
 import { TOKEN_ERROR_CODE } from '@fastgpt/global/common/error/errorCode';
 import { TeamErrEnum } from '@fastgpt/global/common/error/code/team';
+import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
 import { useSystemStore } from '../system/useSystemStore';
 import { getWebReqUrl, subRoute } from '@fastgpt/web/common/system/utils';
 import { i18nT } from '@fastgpt/global/common/i18n/utils';
@@ -163,7 +164,35 @@ function responseError(err: any) {
 
     return Promise.reject({ message: i18nT('common:unauth_token') });
   }
-  // Blance error
+  if (
+    data?.statusText === TeamErrEnum.accountDeletionPending &&
+    pathname !== `${subRoute}/account/cancel` &&
+    pathname !== `${subRoute}/account/team`
+  ) {
+    if (isOutlinkPage || pathname === `${subRoute}/chat`) {
+      return Promise.reject({
+        ...data,
+        message: data.message || i18nT('common:code_error.team_error.account_deletion_pending')
+      });
+    }
+    window.location.replace(getWebReqUrl('/account/team'));
+    return Promise.reject(data);
+  }
+
+  if (
+    data?.statusText === UserErrEnum.accountDeletionPending &&
+    pathname !== `${subRoute}/account/cancel`
+  ) {
+    if (isOutlinkPage || pathname === `${subRoute}/chat`) {
+      return Promise.reject({
+        ...data,
+        message: data.message || i18nT('common:code_error.account_deletion_pending')
+      });
+    }
+    window.location.replace(getWebReqUrl('/account/cancel'));
+    return Promise.reject(data);
+  }
+
   if (
     data?.statusText &&
     [

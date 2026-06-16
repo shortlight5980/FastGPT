@@ -18,6 +18,9 @@ type authModeType = {
   authToken?: boolean;
   authRoot?: boolean;
   authApiKey?: boolean;
+  allowUserAccountDeletionPending?: boolean;
+  allowCurrentUserOwnedTeamAccountDeletionPending?: boolean;
+  allowCurrentSessionTeamAccountDeletionPending?: boolean;
   per?: PermissionValueType;
 };
 

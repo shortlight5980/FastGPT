@@ -2,6 +2,7 @@ import { ERROR_ENUM } from '@fastgpt/global/common/error/errorCode';
 import { updateApiKeyUsedTime } from './tools';
 import { MongoOpenApi } from './schema';
 import type { OpenApiSchema } from '@fastgpt/global/support/openapi/type';
+import { assertAccountUsable } from '../user/accountDeletion/check';
 
 export type AuthOpenApiLimitProps = { openApi: OpenApiSchema };
 
@@ -54,6 +55,11 @@ export async function authOpenApiKey({
     // auth limit
     await global.authOpenApiHandler({
       openApi
+    });
+
+    await assertAccountUsable({
+      teamId: String(openApi.teamId),
+      tmbId: String(openApi.tmbId)
     });
 
     updateApiKeyUsedTime(openApi._id);

@@ -28,6 +28,11 @@ async function getTeamMember(match: Record<string, any>): Promise<TeamTmbItemTyp
     return Promise.reject('member not exist');
   }
 
+  // 兼容历史脏数据：旧团队记录里 notificationAccount 可能被写成 null。
+  // team list 等接口响应 schema 约定这里是 string | undefined，出参前统一归一化。
+  const notificationAccount =
+    typeof tmb.team.notificationAccount === 'string' ? tmb.team.notificationAccount : undefined;
+
   const role =
     (await getTmbPermission({
       resourceType: PerResourceTypeEnum.team,
@@ -50,7 +55,7 @@ async function getTeamMember(match: Record<string, any>): Promise<TeamTmbItemTyp
       role,
       isOwner: tmb.role === TeamMemberRoleEnum.owner
     }),
-    notificationAccount: tmb.team.notificationAccount,
+    notificationAccount,
 
     openaiAccount: tmb.team.openaiAccount,
     externalWorkflowVariables: tmb.team.externalWorkflowVariables,

@@ -1,4 +1,4 @@
-import { GET, POST, PUT } from '@/web/common/api/request';
+import { DELETE, GET, POST, PUT } from '@/web/common/api/request';
 import { hashStr } from '@fastgpt/global/common/string/tools';
 import type { UserAuthTypeEnum } from '@fastgpt/global/support/user/auth/constants';
 import type { UserUpdateParams } from '@/types/user';
@@ -19,6 +19,18 @@ import type {
 import type { AccountRegisterBodyType } from '@fastgpt/global/openapi/support/user/account/register/api';
 import type { LangEnum } from '@fastgpt/global/common/i18n/type';
 import type { LoginSuccessResponseType } from '@fastgpt/global/openapi/support/user/account/login/api';
+import type {
+  AccountCancellationPendingResponseType,
+  AccountCancellationStatusResponseType,
+  CheckAccountCancellationWechatBodyType,
+  CheckAccountCancellationWechatResponseType,
+  ConfirmAccountCancellationOAuthBodyType,
+  GetAccountCancellationWechatQRResponseType,
+  SendAccountCancellationCodeBodyType,
+  StartAccountCancellationOAuthBodyType,
+  StartAccountCancellationOAuthResponseType,
+  SubmitAccountCancellationByCodeBodyType
+} from '@fastgpt/global/openapi/support/user/account/cancellation/api';
 
 /* ===== Auth code ===== */
 export const sendAuthCode = (data: {
@@ -114,6 +126,45 @@ export const updateContact = (data: { contact: string; verifyCode: string }) => 
 
 /* ===== user info ===== */
 export const putUserInfo = (data: UserUpdateParams) => PUT('/support/user/account/update', data);
+
+/* ===== account cancellation ===== */
+export const getAccountCancellationStatus = () =>
+  GET<AccountCancellationStatusResponseType>('/support/user/account/cancellation/status');
+
+export const sendAccountCancellationCode = (data: SendAccountCancellationCodeBodyType) =>
+  POST('/support/user/account/cancellation/sendCode', data);
+
+export const submitAccountCancellationByCode = (data: SubmitAccountCancellationByCodeBodyType) =>
+  POST<AccountCancellationPendingResponseType>(
+    '/support/user/account/cancellation/submitByCode',
+    data
+  );
+
+export const getAccountCancellationWechatQR = () =>
+  POST<GetAccountCancellationWechatQRResponseType>(
+    '/support/user/account/cancellation/wechat/getQR'
+  );
+
+export const checkAccountCancellationWechat = (data: CheckAccountCancellationWechatBodyType) =>
+  POST<CheckAccountCancellationWechatResponseType>(
+    '/support/user/account/cancellation/wechat/check',
+    data
+  );
+
+export const startAccountCancellationOAuth = (data: StartAccountCancellationOAuthBodyType) =>
+  POST<StartAccountCancellationOAuthResponseType>(
+    '/support/user/account/cancellation/oauth/start',
+    data
+  );
+
+export const confirmAccountCancellationOAuth = (data: ConfirmAccountCancellationOAuthBodyType) =>
+  POST<AccountCancellationPendingResponseType>(
+    '/support/user/account/cancellation/oauth/confirm',
+    data
+  );
+
+export const cancelAccountCancellation = () =>
+  DELETE<{ success: boolean }>('/support/user/account/cancellation/cancel');
 
 export const postSyncMembers = () => POST('/proApi/support/user/sync');
 

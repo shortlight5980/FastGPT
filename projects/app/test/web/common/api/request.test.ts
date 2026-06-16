@@ -8,12 +8,14 @@ import {
   AUTH_ERROR_EVENT_NAME
 } from '../../../../src/web/common/api/request';
 import { TeamErrEnum } from '@fastgpt/global/common/error/code/team';
+import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
 import { TOKEN_ERROR_CODE } from '@fastgpt/global/common/error/errorCode';
 import { clearToken } from '@/web/support/user/auth';
+import commonZhCN from '@fastgpt/web/i18n/zh-CN/common.json';
 
 // Mock all required dependencies
 vi.mock('@fastgpt/web/common/system/utils', () => ({
-  getWebReqUrl: vi.fn().mockReturnValue('http://test.com'),
+  getWebReqUrl: vi.fn((path = '') => `http://test.com${path}`),
   subRoute: '/test-route' // Add subRoute mock
 }));
 
@@ -118,7 +120,9 @@ describe('request utils', () => {
       expect(dispatchEventMock).toHaveBeenCalledWith(expect.any(CustomEvent));
       expect(dispatchEventMock.mock.calls[0]?.[0].type).toBe(AUTH_ERROR_EVENT_NAME);
       expect(clearToken).toHaveBeenCalled();
-      expect(mockLocation.replace).toHaveBeenCalledWith('http://test.com');
+      expect(mockLocation.replace).toHaveBeenCalledWith(
+        expect.stringContaining('http://test.com/login?lastRoute=')
+      );
     });
 
     it('should allow auth error listeners to skip clearing token', async () => {
@@ -138,7 +142,9 @@ describe('request utils', () => {
       await expect(responseError(err)).rejects.toEqual({ message: 'common:unauth_token' });
 
       expect(clearToken).not.toHaveBeenCalled();
-      expect(mockLocation.replace).toHaveBeenCalledWith('http://test.com');
+      expect(mockLocation.replace).toHaveBeenCalledWith(
+        expect.stringContaining('http://test.com/login?lastRoute=')
+      );
     });
 
     it('should allow auth error listeners to skip redirect', async () => {
@@ -181,6 +187,78 @@ describe('request utils', () => {
       await expect(responseError(err)).rejects.toEqual({
         statusText: TeamErrEnum.aiPointsNotEnough
       });
+    });
+
+    it('should redirect pending account deletion users to cancellation page', async () => {
+      mockLocation.pathname = '/dashboard';
+      const err = {
+        response: {
+          data: {
+            statusText: UserErrEnum.accountDeletionPending
+          }
+        }
+      };
+
+      await expect(responseError(err)).rejects.toEqual({
+        statusText: UserErrEnum.accountDeletionPending
+      });
+      expect(mockLocation.replace).toHaveBeenCalledWith('http://test.com/account/cancel');
+    });
+
+    it('should not redirect pending account deletion users on outlink page', async () => {
+      mockLocation.pathname = '/test-route/chat/share';
+      const err = {
+        response: {
+          data: {
+            statusText: UserErrEnum.accountDeletionPending
+          }
+        }
+      };
+
+      await expect(responseError(err)).rejects.toEqual({
+        statusText: UserErrEnum.accountDeletionPending,
+        message: 'common:code_error.account_deletion_pending'
+      });
+      expect(mockLocation.replace).not.toHaveBeenCalled();
+    });
+
+    it('should redirect pending account deletion team users to team page', async () => {
+      mockLocation.pathname = '/dashboard';
+      const err = {
+        response: {
+          data: {
+            statusText: TeamErrEnum.accountDeletionPending
+          }
+        }
+      };
+
+      await expect(responseError(err)).rejects.toEqual({
+        statusText: TeamErrEnum.accountDeletionPending
+      });
+      expect(mockLocation.replace).toHaveBeenCalledWith('http://test.com/account/team');
+    });
+
+    it('should not redirect pending account deletion team users on outlink page', async () => {
+      mockLocation.pathname = '/test-route/chat/share';
+      const err = {
+        response: {
+          data: {
+            statusText: TeamErrEnum.accountDeletionPending
+          }
+        }
+      };
+
+      await expect(responseError(err)).rejects.toEqual({
+        statusText: TeamErrEnum.accountDeletionPending,
+        message: 'common:code_error.team_error.account_deletion_pending'
+      });
+      expect(mockLocation.replace).not.toHaveBeenCalled();
+    });
+
+    it('should use the short toast copy for team deletion pending errors', () => {
+      expect(commonZhCN['code_error.team_error.account_deletion_pending']).toBe(
+        '该团队已申请注销！'
+      );
     });
 
     it('should handle string error', async () => {

@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { useSystemStore } from '@/web/common/system/useSystemStore';
 import { useUserStore } from '@/web/support/user/useUserStore';
 import { clearToken } from '@/web/support/user/auth';
-import { oauthLogin } from '@/web/support/user/api';
+import { confirmAccountCancellationOAuth, oauthLogin } from '@/web/support/user/api';
 import { useToast } from '@fastgpt/web/hooks/useToast';
 import Loading from '@fastgpt/web/components/common/MyLoading';
 import { serviceSideProps } from '@/web/common/i18n/utils';
@@ -23,6 +23,11 @@ import { validateRedirectUrl } from '@/web/common/utils/uri';
 import type { LoginSuccessResponseType } from '@fastgpt/global/openapi/support/user/account/login/api';
 import { useLoginRedirectAfterLogin } from '@/web/support/user/loginRedirect';
 import type { LangEnum } from '@fastgpt/global/common/i18n/type';
+import { getOAuthProviderCallbackUrl } from '@/web/support/user/loginRedirect/url';
+import {
+  claimOAuthCallbackByPath,
+  handleAccountCancellationOAuthCallback
+} from '@/web/support/user/loginRedirect/oauthCallback';
 
 let isOauthLogging = false;
 
@@ -85,7 +90,7 @@ const provider = () => {
         const res = await oauthLogin({
           type: loginStore?.provider || OAuthEnum.sso,
           props,
-          callbackUrl: `${location.origin}/login/provider`,
+          callbackUrl: getOAuthProviderCallbackUrl(location.origin),
           inviterId: getInviterId(),
           bd_vid: getBdVId(),
           msclkid: getMsclkid(),
@@ -128,13 +133,58 @@ const provider = () => {
     ]
   );
 
+  const confirmAccountCancellation = useCallback(
+    async ({
+      provider,
+      state,
+      props
+    }: {
+      provider: OAuthEnum;
+      state: string;
+      props: Record<string, string>;
+    }) => {
+      try {
+        const result = await confirmAccountCancellationOAuth({
+          provider,
+          state,
+          callbackUrl: getOAuthProviderCallbackUrl(location.origin),
+          props
+        });
+
+        if (result) {
+          toast({
+            status: 'success',
+            title: t('account_info:account_cancellation_verify_success')
+          });
+          setUserInfo(null);
+          router.replace('/login?lastRoute=/account/cancel');
+        }
+      } catch {
+        toast({
+          status: 'warning',
+          title: t('account_info:account_cancellation_verify_error')
+        });
+        setTimeout(() => {
+          router.replace('/account/cancel');
+        }, 1000);
+      }
+      setLoginStore(undefined);
+    },
+    [router, setLoginStore, setUserInfo, t, toast]
+  );
+
   useEffect(() => {
     if (error) {
       toast({
         status: 'warning',
-        title: t('common:support.user.login.Provider error')
+        title:
+          loginStore?.authType === 'accountCancellation'
+            ? t('account_info:account_cancellation_verify_error')
+            : t('common:support.user.login.Provider error')
       });
-      router.replace(errorRedirectPage);
+      router.replace(
+        loginStore?.authType === 'accountCancellation' ? '/account/cancel' : errorRedirectPage
+      );
       return;
     }
 
@@ -145,23 +195,66 @@ const provider = () => {
     isOauthLogging = true;
 
     (async () => {
-      await retryFn(async () => clearToken());
-      router.prefetch('/dashboard/agent');
+      try {
+        if (loginStore?.authType === 'accountCancellation') {
+          await handleAccountCancellationOAuthCallback({
+            asPath: router.asPath,
+            provider: loginStore.provider,
+            state,
+            expectedState: loginStore.state,
+            props,
+            onInvalidState: async () => {
+              toast({
+                status: 'warning',
+                title: t('account_info:account_cancellation_verify_error')
+              });
+              setLoginStore(undefined);
+              setTimeout(() => {
+                router.replace('/account/cancel');
+              }, 1000);
+            },
+            onConfirm: confirmAccountCancellation
+          });
+          return;
+        }
 
-      if (loginStore && loginStore.provider !== 'sso' && state !== loginStore.state) {
-        toast({
-          status: 'warning',
-          title: t('common:support.user.login.security_failed')
-        });
-        setTimeout(() => {
-          router.replace(errorRedirectPage);
-        }, 1000);
-        return;
-      } else {
-        authProps(props);
+        if (!claimOAuthCallbackByPath(router.asPath)) {
+          return;
+        }
+
+        await retryFn(async () => clearToken());
+        router.prefetch('/dashboard/agent');
+
+        if (loginStore && loginStore.provider !== 'sso' && state !== loginStore.state) {
+          toast({
+            status: 'warning',
+            title: t('common:support.user.login.security_failed')
+          });
+          setTimeout(() => {
+            router.replace(errorRedirectPage);
+          }, 1000);
+          return;
+        } else {
+          authProps(props);
+        }
+      } finally {
+        isOauthLogging = false;
       }
     })();
-  }, [initd, authProps, error, loginStore, router, state, t, toast, props, errorRedirectPage]);
+  }, [
+    initd,
+    authProps,
+    confirmAccountCancellation,
+    error,
+    loginStore,
+    router,
+    state,
+    t,
+    toast,
+    props,
+    errorRedirectPage,
+    setLoginStore
+  ]);
 
   return <Loading />;
 };
@@ -171,7 +264,7 @@ export default provider;
 export async function getServerSideProps(context: any) {
   return {
     props: {
-      ...(await serviceSideProps(context, ['login']))
+      ...(await serviceSideProps(context, ['login', 'account_info']))
     }
   };
 }

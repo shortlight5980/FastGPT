@@ -34,7 +34,8 @@ export enum TeamErrEnum {
   invitationLinkInvalid = 'invitationLinkInvalid',
   youHaveBeenInTheTeam = 'youHaveBeenInTheTeam',
   tooManyInvitations = 'tooManyInvitations',
-  unPermission = 'unPermission'
+  unPermission = 'unPermission',
+  accountDeletionPending = 'teamAccountDeletionPending'
 }
 
 const teamErr = [
@@ -154,6 +155,10 @@ const teamErr = [
   {
     statusText: TeamErrEnum.sandboxNotSupport,
     message: i18nT('common:code_error.team_error.sandbox_not_support')
+  },
+  {
+    statusText: TeamErrEnum.accountDeletionPending,
+    message: i18nT('common:code_error.team_error.account_deletion_pending')
   }
 ];
 

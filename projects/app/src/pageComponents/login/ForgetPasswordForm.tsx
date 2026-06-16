@@ -11,6 +11,7 @@ import { useRequest } from '@fastgpt/web/hooks/useRequest';
 import { checkPasswordRule } from '@fastgpt/global/common/string/password';
 import type { LoginSuccessResponseType } from '@fastgpt/global/openapi/support/user/account/login/api';
 import type { LangEnum } from '@fastgpt/global/common/i18n/type';
+import { userAccountEmailOrPhoneReg } from '@fastgpt/global/support/user/auth/account';
 
 type LoginSuccessHandler = (res: LoginSuccessResponseType) => void | Promise<void>;
 
@@ -108,8 +109,7 @@ const RegisterForm = ({ setPageType, loginSuccess }: Props) => {
             {...register('username', {
               required: t('user:password.email_phone_void'),
               pattern: {
-                value:
-                  /(^1[3456789]\d{9}$)|(^[A-Za-z0-9]+([_\.][A-Za-z0-9]+)*@([A-Za-z0-9\-]+\.)+[A-Za-z]{2,6}$)/,
+                value: userAccountEmailOrPhoneReg,
                 message: t('user:password.email_phone_error')
               }
             })}

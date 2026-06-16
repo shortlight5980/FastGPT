@@ -8,6 +8,8 @@ import {
   ChatSourceEnum,
   ChatSourceTypeEnum
 } from '@fastgpt/global/core/chat/constants';
+import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
+import { TeamErrEnum } from '@fastgpt/global/common/error/code/team';
 import type {
   UserChatItemType,
   AIChatItemValueItemType,
@@ -34,12 +36,15 @@ import { WORKFLOW_MAX_RUN_TIMES } from '@fastgpt/service/core/workflow/constants
 import { dispatchWorkFlow } from '@fastgpt/service/core/workflow/dispatch';
 import { getRunningUserInfoByTmbId } from '@fastgpt/service/support/user/team/utils';
 import { createChatUsageRecord } from '@fastgpt/service/support/wallet/usage/controller';
+import { assertAccountUsable } from '@fastgpt/service/support/user/accountDeletion/check';
 
 const logger = getLogger();
 
 export const getScheduleTriggerApp = async () => {
   const startAt = new Date();
   logger.info('Schedule trigger scan started', { startAt });
+  const isAccountDeletionPendingError = (error: unknown) =>
+    error === UserErrEnum.accountDeletionPending || error === TeamErrEnum.accountDeletionPending;
 
   // 1. Find all the app
   const apps = await retryFn(() => {
@@ -64,10 +69,46 @@ export const getScheduleTriggerApp = async () => {
   await batchRun(
     apps,
     async (app) => {
-      if (!app.scheduledTriggerConfig) return;
+      const scheduledTriggerConfig = app.scheduledTriggerConfig;
+      if (!scheduledTriggerConfig) return;
       const chatId = getNanoid();
       const responseChatItemId = getNanoid(24);
       let chatRoundFinalized = false;
+      const updateNextTriggerTime = async () => {
+        const nextTime = getNextTimeByCronStringAndTimezone(scheduledTriggerConfig);
+        await retryFn(() =>
+          MongoApp.updateOne({ _id: app._id }, { $set: { scheduledTriggerNextTime: nextTime } })
+        ).catch((err) => {
+          logger.error('Schedule trigger update next time failed', {
+            error: err,
+            appId: app._id,
+            appName: app.name,
+            nextTime
+          });
+        });
+      };
+
+      try {
+        // 定时触发没有请求态 authCert，需要在创建 usage 和聊天记录前补账号可用性校验。
+        await assertAccountUsable({
+          teamId: String(app.teamId),
+          tmbId: String(app.tmbId)
+        });
+      } catch (error) {
+        if (!isAccountDeletionPendingError(error)) {
+          return Promise.reject(error);
+        }
+
+        logger.info('Schedule trigger skipped by account deletion pending', {
+          error: getErrText(error),
+          appId: app._id,
+          appName: app.name,
+          teamId: app.teamId,
+          tmbId: app.tmbId
+        });
+        await updateNextTriggerTime();
+        return;
+      }
 
       // Get app latest version
       const { versionId, nodes, edges, chatConfig } = await retryFn(() =>
@@ -76,7 +117,7 @@ export const getScheduleTriggerApp = async () => {
       const userQuery: UserChatItemValueItemType[] = [
         {
           text: {
-            content: app.scheduledTriggerConfig.defaultPrompt || ''
+            content: scheduledTriggerConfig.defaultPrompt || ''
           }
         }
       ];
@@ -230,18 +271,7 @@ export const getScheduleTriggerApp = async () => {
           }
         }
       } finally {
-        // update next time
-        const nextTime = getNextTimeByCronStringAndTimezone(app.scheduledTriggerConfig);
-        await retryFn(() =>
-          MongoApp.updateOne({ _id: app._id }, { $set: { scheduledTriggerNextTime: nextTime } })
-        ).catch((err) => {
-          logger.error('Schedule trigger update next time failed', {
-            error: err,
-            appId: app._id,
-            appName: app.name,
-            nextTime
-          });
-        });
+        await updateNextTriggerTime();
       }
     },
     50

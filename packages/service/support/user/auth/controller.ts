@@ -46,7 +46,7 @@ export const authCode = async (props: z.infer<typeof authCodeSchema>) => {
       {
         key,
         type,
-        code: { $regex: new RegExp(`^${code}$`, 'i') }
+        code
       },
       undefined,
       { session }

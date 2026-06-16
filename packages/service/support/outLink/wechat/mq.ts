@@ -9,6 +9,7 @@ import { delRedisCache, getRedisCache, setRedisCache } from '../../../common/red
 import { groupMessagesByUser } from './messageParser';
 import { serviceEnv } from '../../../env';
 import { batchRun, retryFn } from '@fastgpt/global/common/system/utils';
+import { assertAccountUsable } from '../../user/accountDeletion/check';
 
 const logger = getLogger(LogCategories.MODULE.OUTLINK.WECHAT);
 
@@ -30,6 +31,13 @@ const POLL_HARD_TIMEOUT_MS = 120_000;
 const pollJobId = (shareId: string) => `wechat-poll:${shareId}`;
 const replyJobId = (shareId: string, lastMsgId: string) => `wechat-reply:${shareId}:${lastMsgId}`;
 const failKey = (shareId: string) => `wechat:publish:failures:${shareId}`;
+
+async function assertWechatOutLinkUsable(outLink: Pick<OutLinkSchemaType, 'teamId' | 'tmbId'>) {
+  await assertAccountUsable({
+    teamId: outLink.teamId ? String(outLink.teamId) : undefined,
+    tmbId: outLink.tmbId ? String(outLink.tmbId) : undefined
+  });
+}
 
 /* ============ Poll Worker 处理器 ============ */
 // 设计约定：
@@ -73,6 +81,7 @@ async function pollImpl(job: Job<WechatPollJobData>): Promise<void> {
     logger.warn('No token, stop polling', { shareId });
     throw new Error('No token');
   }
+  await assertWechatOutLinkUsable(outLink);
 
   const client = new ILinkClient(app.baseUrl, app.token);
   const resp = await client.getUpdates(app.syncBuf || '');
@@ -156,6 +165,7 @@ async function processWechatReplyJob(job: Job<WechatReplyJobData>): Promise<void
     logger.warn('Channel not available, drop reply', { shareId, lastMsgId });
     return;
   }
+  await assertWechatOutLinkUsable(outLink);
 
   const app = outLink.app;
   const client = new ILinkClient(app.baseUrl, app.token);
@@ -218,9 +228,20 @@ async function shouldContinuePolling(shareId: string): Promise<boolean> {
       'app.status': 'online',
       'app.token': { $exists: true, $ne: '' }
     },
-    { _id: 1 }
-  ).lean();
-  return Boolean(outLink);
+    { teamId: 1, tmbId: 1 }
+  ).lean<OutLinkSchemaType | null>();
+  if (!outLink) return false;
+
+  try {
+    await assertWechatOutLinkUsable(outLink);
+    return true;
+  } catch (error) {
+    logger.warn('Wechat channel stopped by unavailable account', {
+      shareId,
+      error: String(error)
+    });
+    return false;
+  }
 }
 
 /* ============ 对外接口 ============ */
@@ -285,7 +306,7 @@ async function resumeAllWechatPolling(): Promise<void> {
       'app.status': 'online',
       'app.token': { $exists: true, $ne: '' }
     },
-    { shareId: 1 }
+    { shareId: 1, teamId: 1, tmbId: 1 }
   ).lean();
 
   logger.info('Resuming wechat polling', { count: onlineChannels.length });
@@ -293,6 +314,15 @@ async function resumeAllWechatPolling(): Promise<void> {
   await batchRun(
     onlineChannels,
     async (ch) => {
+      try {
+        await assertWechatOutLinkUsable(ch as OutLinkSchemaType);
+      } catch (error) {
+        logger.warn('Skip unavailable wechat channel polling', {
+          shareId: ch.shareId,
+          error: String(error)
+        });
+        return;
+      }
       await scheduleNextPoll(ch.shareId);
     },
     100

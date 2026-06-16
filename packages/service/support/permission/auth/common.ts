@@ -9,6 +9,7 @@ import { authUserSession } from '../../../support/user/session';
 import { authOpenApiKey } from '../../../support/openapi/auth';
 import { AuthUserTypeEnum } from '@fastgpt/global/support/permission/constant';
 import { serviceEnv } from '../../../env';
+import { assertAccountUsable } from '../../../support/user/accountDeletion/check';
 
 export const authCert = async (props: AuthModeType) => {
   const result = await parseHeaderCert(props);
@@ -31,7 +32,10 @@ export async function parseHeaderCert({
   req,
   authToken = false,
   authRoot = false,
-  authApiKey = false
+  authApiKey = false,
+  allowUserAccountDeletionPending = false,
+  allowCurrentUserOwnedTeamAccountDeletionPending = false,
+  allowCurrentSessionTeamAccountDeletionPending = false
 }: AuthModeType) {
   // parse jwt
   async function authCookieToken(cookie?: string, token?: string) {
@@ -156,6 +160,15 @@ export async function parseHeaderCert({
   if (!authRoot && (!teamId || !tmbId)) {
     return Promise.reject(ERROR_ENUM.unAuthorization);
   }
+
+  await assertAccountUsable({
+    userId: uid ? String(uid) : undefined,
+    teamId: teamId ? String(teamId) : undefined,
+    tmbId: tmbId ? String(tmbId) : undefined,
+    allowUserAccountDeletionPending,
+    allowCurrentSessionTeamAccountDeletionPending,
+    allowCurrentUserOwnedTeamAccountDeletionPending
+  });
 
   return {
     userId: String(uid),

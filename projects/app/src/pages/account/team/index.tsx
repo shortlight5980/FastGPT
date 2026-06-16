@@ -1,7 +1,7 @@
 'use client';
 import { serviceSideProps } from '@/web/common/i18n/utils';
 import AccountContainer from '@/pageComponents/account/AccountContainer';
-import { Box, Flex } from '@chakra-ui/react';
+import { Box, Flex, VStack } from '@chakra-ui/react';
 import Icon from '@fastgpt/web/components/common/Icon';
 import { useTranslation } from 'next-i18next';
 import TeamSelector from '@/pageComponents/account/TeamSelector';
@@ -16,6 +16,7 @@ import { TeamContext, TeamModalContextProvider } from '@/pageComponents/account/
 import dynamic from 'next/dynamic';
 import { useSystemStore } from '@/web/common/system/useSystemStore';
 import { useToast } from '@fastgpt/web/hooks/useToast';
+import { formatTime2YMDHM } from '@fastgpt/global/common/string/time';
 
 const MemberTable = dynamic(() => import('@/pageComponents/account/team/MemberTable'));
 const PermissionManage = dynamic(
@@ -63,6 +64,8 @@ const Team = () => {
     };
   }, [subPlans?.standard, level]);
   const { toast } = useToast();
+  const teamAccountDeletion = userInfo?.teamAccountDeletion;
+  const hasManagePermission = userInfo?.team?.permission?.hasManagePer;
 
   const { setEditTeamData, teamSize } = useContextSelector(TeamContext, (v) => v);
 
@@ -74,7 +77,7 @@ const Team = () => {
           { label: t('account_team:org'), value: TeamTabEnum.org },
           { label: t('account_team:group'), value: TeamTabEnum.group },
           { label: t('account_team:permission'), value: TeamTabEnum.permission },
-          ...(userInfo?.team.permission.hasManagePer
+          ...(hasManagePermission
             ? [{ label: t('account_team:audit_log'), value: TeamTabEnum.audit }]
             : [])
         ]}
@@ -97,7 +100,7 @@ const Team = () => {
         }}
       />
     ),
-    [planContent, router, t, teamTab, toast]
+    [hasManagePermission, planContent, router, t, teamTab, toast]
   );
 
   return (
@@ -172,11 +175,49 @@ const Team = () => {
           flexDirection={'column'}
           overflow={'auto'}
         >
-          {teamTab === TeamTabEnum.member && <MemberTable Tabs={Tabs} />}
-          {teamTab === TeamTabEnum.org && <OrgManage Tabs={Tabs} />}
-          {teamTab === TeamTabEnum.group && <GroupManage Tabs={Tabs} />}
-          {teamTab === TeamTabEnum.permission && <PermissionManage Tabs={Tabs} />}
-          {teamTab === TeamTabEnum.audit && <AuditLog Tabs={Tabs} />}
+          {teamAccountDeletion ? (
+            <Flex flex={1} align={'center'} justify={'center'}>
+              <VStack
+                maxW={'560px'}
+                w={'100%'}
+                spacing={4}
+                align={'stretch'}
+                p={8}
+                border={'1px solid'}
+                borderColor={'orange.200'}
+                bg={'orange.50'}
+                borderRadius={'xl'}
+              >
+                <Box fontSize={'xl'} fontWeight={'bold'} color={'orange.700'}>
+                  {t('account_team:team_account_deletion_pending_title')}
+                </Box>
+                <Box color={'myGray.700'}>
+                  {t('account_team:team_account_deletion_pending_desc', {
+                    teamName: userInfo?.team?.teamName
+                  })}
+                </Box>
+                <Box color={'myGray.600'}>
+                  {t('account_team:team_account_deletion_requested_at', {
+                    time: formatTime2YMDHM(teamAccountDeletion.requestedAt)
+                  })}
+                </Box>
+                <Box color={'myGray.600'}>
+                  {t('account_team:team_account_deletion_scheduled_at', {
+                    time: formatTime2YMDHM(teamAccountDeletion.scheduledDeleteAt)
+                  })}
+                </Box>
+                <Box color={'myGray.600'}>{t('account_team:team_account_deletion_switch_tip')}</Box>
+              </VStack>
+            </Flex>
+          ) : (
+            <>
+              {teamTab === TeamTabEnum.member && <MemberTable Tabs={Tabs} />}
+              {teamTab === TeamTabEnum.org && <OrgManage Tabs={Tabs} />}
+              {teamTab === TeamTabEnum.group && <GroupManage Tabs={Tabs} />}
+              {teamTab === TeamTabEnum.permission && <PermissionManage Tabs={Tabs} />}
+              {teamTab === TeamTabEnum.audit && <AuditLog Tabs={Tabs} />}
+            </>
+          )}
         </Box>
       </Flex>
       {invitelinkid && <HandleInviteModal invitelinkid={invitelinkid} />}

@@ -3,8 +3,10 @@ import { LanguageSchema, type LangEnum } from '../../common/i18n/type';
 import { TeamPermission } from '../permission/user/controller';
 import type { UserStatusEnum } from './constant';
 import { TeamMemberStatusEnum } from './team/constant';
-import { TeamTmbItemSchema } from './team/type';
+import { TeamTmbItemSchema, type OpenaiAccountType } from './team/type';
 import type { FastGPTSemType } from '../marketing/type';
+import { AccountDeletionStatusEnum } from './accountDeletion/constants';
+import { type TeamAccountDeletionState } from './accountDeletion/type';
 
 export const UserTagsSchema = z.enum(['wecom']);
 export const UserTagsEnum = UserTagsSchema.enum;
@@ -21,6 +23,7 @@ export type UserModelSchema = {
   promotionRate: number;
   inviterId?: string;
   openaiKey: string;
+  openaiAccount?: OpenaiAccountType;
   createTime: number;
   timezone: string;
   language: `${LangEnum}`;
@@ -28,6 +31,7 @@ export type UserModelSchema = {
   lastLoginTmbId?: string;
   passwordUpdateTime?: Date;
   fastgpt_sem?: FastGPTSemType;
+  phonePrefix?: number;
   contact?: string;
   tags: UserTagsType[];
   meta?: UserMetaType;
@@ -43,9 +47,25 @@ export const UserSchema = z.object({
   team: TeamTmbItemSchema,
   permission: z.instanceof(TeamPermission),
   contact: z.string().optional(),
-  tags: z.array(UserTagsSchema).optional()
+  tags: z.array(UserTagsSchema).optional(),
+  accountDeletion: z
+    .object({
+      status: z.enum([AccountDeletionStatusEnum.pending, AccountDeletionStatusEnum.finalizing]),
+      requestedAt: z.date(),
+      scheduledDeleteAt: z.date()
+    })
+    .optional(),
+  teamAccountDeletion: z
+    .object({
+      status: z.enum([AccountDeletionStatusEnum.pending, AccountDeletionStatusEnum.finalizing]),
+      requestedAt: z.date(),
+      scheduledDeleteAt: z.date(),
+      ownerUserId: z.string()
+    })
+    .optional()
 });
 export type UserType = z.infer<typeof UserSchema>;
+export type UserTeamAccountDeletionType = TeamAccountDeletionState;
 
 export const SourceMemberSchema = z.object({
   name: z.string().meta({ example: '张三', description: '成员名称' }),

@@ -6,10 +6,23 @@ import {
 } from '@/web/core/workflow/localDraft/useWorkflowLocalDraftRestore';
 
 const DEFAULT_LOGIN_ROUTE = '/dashboard/agent';
+const ACCOUNT_CANCELLATION_ROUTE = '/account/cancel';
+const TEAM_SWITCH_ROUTE = '/account/team';
 
 type RestoreWorkflowLocalDraft = (props: {
   user: UserType;
 }) => Promise<WorkflowLocalDraftRestoreResult>;
+
+const isAccountDeletionActive = (user: UserType) =>
+  user.accountDeletion?.status === 'pending' || user.accountDeletion?.status === 'finalizing';
+const isTeamAccountDeletionActive = (user: UserType) =>
+  user.teamAccountDeletion?.status === 'pending' ||
+  user.teamAccountDeletion?.status === 'finalizing';
+
+const getSafeRouteForUsableAccount = (route: string) =>
+  route.startsWith(ACCOUNT_CANCELLATION_ROUTE) || route.startsWith(TEAM_SWITCH_ROUTE)
+    ? DEFAULT_LOGIN_ROUTE
+    : route;
 
 /**
  * 计算普通登录成功后的兜底跳转地址。
@@ -26,11 +39,18 @@ export const getSafeFallbackRouteAfterLogin = ({
   fallbackRoute: string;
   lastTmbId?: string;
 }) => {
+  if (isAccountDeletionActive(user)) {
+    return ACCOUNT_CANCELLATION_ROUTE;
+  }
+  if (isTeamAccountDeletionActive(user)) {
+    return TEAM_SWITCH_ROUTE;
+  }
+
   if (lastTmbId && lastTmbId !== user.team?.tmbId) {
     return DEFAULT_LOGIN_ROUTE;
   }
 
-  return fallbackRoute;
+  return getSafeRouteForUsableAccount(fallbackRoute);
 };
 
 /**
@@ -51,6 +71,13 @@ export const resolveLoginRedirectAfterLogin = async ({
   lastTmbId?: string;
   restoreWorkflowLocalDraft: RestoreWorkflowLocalDraft;
 }) => {
+  if (isAccountDeletionActive(user)) {
+    return ACCOUNT_CANCELLATION_ROUTE;
+  }
+  if (isTeamAccountDeletionActive(user)) {
+    return TEAM_SWITCH_ROUTE;
+  }
+
   const draftResult = await restoreWorkflowLocalDraft({ user });
 
   if (draftResult.status === 'restored') {

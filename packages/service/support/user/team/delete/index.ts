@@ -1,9 +1,33 @@
 import { getQueue, getWorker, QueueNames } from '../../../../common/bullmq';
 import { teamDeleteProcessor } from './processor';
+import type { JobState } from 'bullmq';
 
 export type TeamDeleteJobData = {
   teamId: string;
 };
+
+export type TeamDeleteJobStateDetail =
+  | {
+      state: 'missing';
+    }
+  | {
+      state: JobState;
+      failedReason?: string;
+      attemptsMade?: number;
+    };
+
+const getTeamDeleteQueue = () =>
+  getQueue<TeamDeleteJobData>(QueueNames.teamDelete, {
+    defaultJobOptions: {
+      attempts: 10,
+      backoff: {
+        type: 'exponential',
+        delay: 5000
+      },
+      removeOnComplete: true,
+      removeOnFail: { age: 30 * 24 * 60 * 60 } // 保留30天失败记录
+    }
+  });
 
 // 创建工作进程
 export const initTeamDeleteWorker = () => {
@@ -19,17 +43,7 @@ export const initTeamDeleteWorker = () => {
 // 添加删除任务
 export const addTeamDeleteJob = (data: TeamDeleteJobData) => {
   // 创建删除队列
-  const teamDeleteQueue = getQueue<TeamDeleteJobData>(QueueNames.teamDelete, {
-    defaultJobOptions: {
-      attempts: 10,
-      backoff: {
-        type: 'exponential',
-        delay: 5000
-      },
-      removeOnComplete: true,
-      removeOnFail: { age: 30 * 24 * 60 * 60 } // 保留30天失败记录
-    }
-  });
+  const teamDeleteQueue = getTeamDeleteQueue();
 
   const jobId = `${String(data.teamId)}`;
 
@@ -38,4 +52,45 @@ export const addTeamDeleteJob = (data: TeamDeleteJobData) => {
     jobId,
     delay: 1000 // Delay 1 second to ensure API response completes
   });
+};
+
+export const getTeamDeleteJobState = async (teamId: string) => {
+  const detail = await getTeamDeleteJobStateDetail(teamId);
+  if (detail.state === 'missing') return 'completed';
+
+  return detail.state;
+};
+
+/**
+ * 读取团队删除任务的原始队列状态，并保留 job 缺失、失败原因和重试次数。
+ * 旧的 getTeamDeleteJobState 为兼容调用方会把 missing 折算为 completed；
+ * 需要做补偿或告警时应使用本函数，避免把 worker no-op、完成清理和任务丢失混在一起。
+ */
+export const getTeamDeleteJobStateDetail = async (
+  teamId: string
+): Promise<TeamDeleteJobStateDetail> => {
+  const teamDeleteQueue = getTeamDeleteQueue();
+  const job = await teamDeleteQueue.getJob(String(teamId));
+  if (!job) return { state: 'missing' };
+
+  const state = await job.getState();
+  return {
+    state: state === 'unknown' ? 'completed' : state,
+    failedReason: job.failedReason,
+    attemptsMade: job.attemptsMade
+  };
+};
+
+export const retryTeamDeleteJob = async (data: TeamDeleteJobData) => {
+  const teamDeleteQueue = getTeamDeleteQueue();
+  const job = await teamDeleteQueue.getJob(String(data.teamId));
+  if (!job) {
+    return addTeamDeleteJob(data);
+  }
+
+  if ((await job.getState()) === 'failed') {
+    await job.retry('failed');
+  }
+
+  return job;
 };

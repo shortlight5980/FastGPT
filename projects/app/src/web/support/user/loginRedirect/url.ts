@@ -1,5 +1,6 @@
 import { safeEncodeURIComponent } from '@/web/common/utils/uri';
 import { getCurrentAuthTmbId } from '../currentAuthTmbId';
+import { subRoute } from '@fastgpt/web/common/system/utils';
 
 export const LAST_TMB_ID_QUERY_KEY = 'lastTmbId';
 
@@ -24,4 +25,12 @@ export const getAuthLoginRedirectPath = ({
   }
 
   return `/login?${query.join('&')}`;
+};
+
+/**
+ * 统一构造第三方 OAuth 回调地址。
+ * 需要拼接前端 basePath，避免部署在子路径时回调落到错误路径。
+ */
+export const getOAuthProviderCallbackUrl = (origin: string) => {
+  return `${origin}${subRoute || ''}/login/provider`;
 };

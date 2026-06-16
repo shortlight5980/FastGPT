@@ -8,6 +8,7 @@ import { restoreWorkflowLocalDraftAfterLogin } from '../../../../src/web/core/wo
 import { setCurrentAuthTmbId } from '../../../../src/web/support/user/currentAuthTmbId';
 import { getAuthLoginRedirectPath } from '../../../../src/web/support/user/loginRedirect/url';
 import type { UserType } from '@fastgpt/global/support/user/type';
+import { AccountDeletionStatusEnum } from '@fastgpt/global/support/user/accountDeletion/constants';
 
 vi.mock('@/web/core/app/api/version', () => ({
   postPublishApp: vi.fn()
@@ -296,6 +297,82 @@ describe('login redirect helpers', () => {
 
     expect(saveDraft).not.toHaveBeenCalled();
     expect(route).toBe('/app/detail?appId=app-1&currentTab=appEdit');
+  });
+
+  it('should not reuse account cancellation page as fallback route for normal users', async () => {
+    const saveDraft = vi.fn();
+
+    const route = await resolveLoginRoute({
+      fallbackRoute: '/account/cancel',
+      saveDraft: saveDraft as any
+    });
+
+    expect(saveDraft).not.toHaveBeenCalled();
+    expect(route).toBe('/dashboard/agent');
+  });
+
+  it('should redirect pending account deletion users to cancellation page before restoring drafts', async () => {
+    saveDraftToStorage();
+    const saveDraft = vi.fn();
+
+    const route = await resolveLoginRoute({
+      loginUser: {
+        ...user,
+        accountDeletion: {
+          status: AccountDeletionStatusEnum.pending,
+          requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+          scheduledDeleteAt: new Date('2026-06-16T00:00:00.000Z')
+        }
+      },
+      fallbackRoute: '/app/detail?appId=app-1&currentTab=appEdit',
+      saveDraft: saveDraft as any
+    });
+
+    expect(saveDraft).not.toHaveBeenCalled();
+    expect(route).toBe('/account/cancel');
+  });
+
+  it('should redirect finalizing account deletion users to cancellation page before restoring drafts', async () => {
+    saveDraftToStorage();
+    const saveDraft = vi.fn();
+
+    const route = await resolveLoginRoute({
+      loginUser: {
+        ...user,
+        accountDeletion: {
+          status: AccountDeletionStatusEnum.finalizing,
+          requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+          scheduledDeleteAt: new Date('2026-06-16T00:00:00.000Z')
+        }
+      },
+      fallbackRoute: '/app/detail?appId=app-1&currentTab=appEdit',
+      saveDraft: saveDraft as any
+    });
+
+    expect(saveDraft).not.toHaveBeenCalled();
+    expect(route).toBe('/account/cancel');
+  });
+
+  it('should redirect users whose current team is owner-pending to team switch page before restoring drafts', async () => {
+    saveDraftToStorage();
+    const saveDraft = vi.fn();
+
+    const route = await resolveLoginRoute({
+      loginUser: {
+        ...user,
+        teamAccountDeletion: {
+          status: AccountDeletionStatusEnum.pending,
+          requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+          scheduledDeleteAt: new Date('2026-06-16T00:00:00.000Z'),
+          ownerUserId: 'owner-user'
+        }
+      },
+      fallbackRoute: '/app/detail?appId=app-1&currentTab=appEdit',
+      saveDraft: saveDraft as any
+    });
+
+    expect(saveDraft).not.toHaveBeenCalled();
+    expect(route).toBe('/account/team');
   });
 
   it('should skip fallback route without draft when login tmbId differs from query lastTmbId', async () => {

@@ -12,6 +12,10 @@ import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
 import type { LoginByPasswordBodyType } from '@fastgpt/global/openapi/support/user/account/login/api';
 import { Call } from '@test/utils/request';
 import { initTeamFreePlan } from '@fastgpt/service/support/wallet/sub/utils';
+import { MongoAccountDeletion } from '@fastgpt/service/support/user/accountDeletion/schema';
+import { AccountDeletionStatusEnum } from '@fastgpt/global/support/user/accountDeletion/constants';
+
+type EmptyQuery = Record<string, never>;
 
 describe('loginByPassword API', () => {
   let testUser: any;
@@ -49,7 +53,7 @@ describe('loginByPassword API', () => {
   });
 
   it('should login successfully with valid credentials', async () => {
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: 'testuser',
         password: 'testpassword',
@@ -84,7 +88,7 @@ describe('loginByPassword API', () => {
   });
 
   it('should reject login when username is empty', async () => {
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: '',
         password: 'testpassword',
@@ -97,7 +101,7 @@ describe('loginByPassword API', () => {
   });
 
   it('should reject login when password is empty', async () => {
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: 'testuser',
         password: '',
@@ -114,7 +118,7 @@ describe('loginByPassword API', () => {
   it('should reject login when auth code verification fails', async () => {
     vi.mocked(authCode).mockRejectedValueOnce(new Error('Invalid code'));
 
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: 'testuser',
         password: 'testpassword',
@@ -128,7 +132,7 @@ describe('loginByPassword API', () => {
   });
 
   it('should reject login when user does not exist', async () => {
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: 'nonexistentuser',
         password: 'testpassword',
@@ -146,7 +150,7 @@ describe('loginByPassword API', () => {
       status: UserStatusEnum.forbidden
     });
 
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: 'testuser',
         password: 'testpassword',
@@ -160,7 +164,7 @@ describe('loginByPassword API', () => {
   });
 
   it('should reject login when password is incorrect', async () => {
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: 'testuser',
         password: 'wrongpassword',
@@ -174,7 +178,7 @@ describe('loginByPassword API', () => {
   });
 
   it('should update language on successful login', async () => {
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: 'testuser',
         password: 'testpassword',
@@ -217,7 +221,7 @@ describe('loginByPassword API', () => {
       lastLoginTmbId: rootTmb._id
     });
 
-    const res = await Call<LoginByPasswordBodyType, {}, any>(loginApi.default, {
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
       body: {
         username: 'root',
         password: 'rootpassword',
@@ -231,12 +235,80 @@ describe('loginByPassword API', () => {
     expect(typeof res.data.token).toBe('string');
   });
 
+  it('should return teamAccountDeletion for non-owner members when the owner team is pending deletion', async () => {
+    const owner = await MongoUser.create({
+      username: 'owner-pending-password@example.com',
+      password: 'testpassword',
+      status: UserStatusEnum.active
+    });
+    const team = await MongoTeam.create({
+      name: 'Owner Pending Password Team',
+      ownerId: owner._id
+    });
+
+    await initTeamFreePlan({
+      teamId: String(team._id)
+    });
+
+    await MongoTeamMember.create({
+      teamId: team._id,
+      userId: owner._id,
+      status: 'active',
+      role: 'owner'
+    });
+
+    const member = await MongoUser.create({
+      username: 'member-pending-password@example.com',
+      password: 'memberpassword',
+      status: UserStatusEnum.active
+    });
+    const memberTmb = await MongoTeamMember.create({
+      teamId: team._id,
+      userId: member._id,
+      status: 'active',
+      role: 'member'
+    });
+
+    await MongoUser.findByIdAndUpdate(member._id, {
+      lastLoginTmbId: memberTmb._id
+    });
+
+    await MongoAccountDeletion.create({
+      userId: owner._id,
+      usernameSnapshot: owner.username,
+      status: AccountDeletionStatusEnum.pending,
+      requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+      scheduledDeleteAt: new Date('2026-06-16T00:00:00.000Z'),
+      ownerTeamIds: [team._id]
+    });
+
+    const res = await Call<LoginByPasswordBodyType, EmptyQuery, any>(loginApi.default, {
+      body: {
+        username: member.username,
+        password: 'memberpassword',
+        code: '123456',
+        language: 'zh-CN'
+      }
+    });
+
+    expect(res.code).toBe(200);
+    expect(res.data.user.accountDeletion).toBeUndefined();
+    expect(res.data.user.teamAccountDeletion).toMatchObject({
+      status: AccountDeletionStatusEnum.pending,
+      ownerUserId: String(owner._id),
+      requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+      scheduledDeleteAt: new Date('2026-06-16T00:00:00.000Z')
+    });
+    expect(res.data.user.team.teamId).toBe(String(team._id));
+    expect(res.data.user.team.tmbId).toBe(String(memberTmb._id));
+  });
+
   // ===== Security: NoSQL injection prevention (GHSA-jxvr-h2vx-p73r) =====
 
   describe('NoSQL injection prevention', () => {
     it('should reject password as object with MongoDB operator ($ne)', async () => {
       // GHSA-jxvr-h2vx-p73r Step 2: password: {"$ne": ""} bypasses password check
-      const res = await Call<any, {}, any>(loginApi.default, {
+      const res = await Call<any, EmptyQuery, any>(loginApi.default, {
         body: {
           username: 'testuser',
           password: { $ne: '' },
@@ -252,7 +324,7 @@ describe('loginByPassword API', () => {
     });
 
     it('should reject password with $regex operator', async () => {
-      const res = await Call<any, {}, any>(loginApi.default, {
+      const res = await Call<any, EmptyQuery, any>(loginApi.default, {
         body: {
           username: 'testuser',
           password: { $regex: '.*' },
@@ -265,7 +337,7 @@ describe('loginByPassword API', () => {
     });
 
     it('should reject password with $where injection', async () => {
-      const res = await Call<any, {}, any>(loginApi.default, {
+      const res = await Call<any, EmptyQuery, any>(loginApi.default, {
         body: {
           username: 'testuser',
           password: { $where: 'return true' },
@@ -278,7 +350,7 @@ describe('loginByPassword API', () => {
     });
 
     it('should reject username as object with MongoDB operator', async () => {
-      const res = await Call<any, {}, any>(loginApi.default, {
+      const res = await Call<any, EmptyQuery, any>(loginApi.default, {
         body: {
           username: { $ne: '' },
           password: 'testpassword',
@@ -291,7 +363,7 @@ describe('loginByPassword API', () => {
     });
 
     it('should reject code as object with MongoDB operator', async () => {
-      const res = await Call<any, {}, any>(loginApi.default, {
+      const res = await Call<any, EmptyQuery, any>(loginApi.default, {
         body: {
           username: 'testuser',
           password: 'testpassword',
@@ -304,7 +376,7 @@ describe('loginByPassword API', () => {
     });
 
     it('should reject all fields as injection objects simultaneously', async () => {
-      const res = await Call<any, {}, any>(loginApi.default, {
+      const res = await Call<any, EmptyQuery, any>(loginApi.default, {
         body: {
           username: { $ne: '' },
           password: { $ne: '' },
@@ -317,7 +389,7 @@ describe('loginByPassword API', () => {
     });
 
     it('should reject password as non-string types (array, number)', async () => {
-      const arrayRes = await Call<any, {}, any>(loginApi.default, {
+      const arrayRes = await Call<any, EmptyQuery, any>(loginApi.default, {
         body: {
           username: 'testuser',
           password: ['testpassword'],
@@ -327,7 +399,7 @@ describe('loginByPassword API', () => {
       });
       expect(arrayRes.code).toBe(500);
 
-      const numberRes = await Call<any, {}, any>(loginApi.default, {
+      const numberRes = await Call<any, EmptyQuery, any>(loginApi.default, {
         body: {
           username: 'testuser',
           password: 12345,

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ChatRoleEnum, ChatSourceEnum } from '@fastgpt/global/core/chat/constants';
+import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
 import {
   ChatRoleEnum,
   ChatSourceEnum,
@@ -19,7 +21,8 @@ const mocks = vi.hoisted(() => ({
   getWorkflowEntryNodeIds: vi.fn(),
   storeNodes2RuntimeNodes: vi.fn(),
   storeEdges2RuntimeEdges: vi.fn(),
-  getNextTimeByCronStringAndTimezone: vi.fn()
+  getNextTimeByCronStringAndTimezone: vi.fn(),
+  assertAccountUsable: vi.fn()
 }));
 
 vi.mock('@fastgpt/service/common/logger', () => ({
@@ -77,6 +80,10 @@ vi.mock('@fastgpt/global/common/string/time', () => ({
   getNextTimeByCronStringAndTimezone: mocks.getNextTimeByCronStringAndTimezone
 }));
 
+vi.mock('@fastgpt/service/support/user/accountDeletion/check', () => ({
+  assertAccountUsable: mocks.assertAccountUsable
+}));
+
 import { getScheduleTriggerApp } from '@/service/core/app/utils';
 
 describe('getScheduleTriggerApp', () => {
@@ -129,6 +136,7 @@ describe('getScheduleTriggerApp', () => {
     mocks.failChatRound.mockResolvedValue(undefined);
     mocks.updateChatGenerateStatus.mockResolvedValue(undefined);
     mocks.getNextTimeByCronStringAndTimezone.mockReturnValue(new Date('2026-06-08T00:00:00.000Z'));
+    mocks.assertAccountUsable.mockResolvedValue(undefined);
   });
 
   it('saves scheduled trigger AI content with the dispatch responseChatItemId', async () => {
@@ -177,5 +185,28 @@ describe('getScheduleTriggerApp', () => {
       responseChatItemId: 'prepared-response-id',
       error
     });
+  });
+
+  it('skips scheduled trigger workflow when the account is pending deletion and updates next time', async () => {
+    mocks.assertAccountUsable.mockRejectedValue(UserErrEnum.accountDeletionPending);
+
+    await getScheduleTriggerApp();
+
+    expect(mocks.assertAccountUsable).toHaveBeenCalledWith({
+      teamId: 'team-id',
+      tmbId: 'tmb-id'
+    });
+    expect(mocks.getAppLatestVersion).not.toHaveBeenCalled();
+    expect(mocks.createChatUsageRecord).not.toHaveBeenCalled();
+    expect(mocks.preChatRound).not.toHaveBeenCalled();
+    expect(mocks.dispatchWorkFlow).not.toHaveBeenCalled();
+    expect(mocks.appUpdateOne).toHaveBeenCalledWith(
+      { _id: 'app-id' },
+      {
+        $set: {
+          scheduledTriggerNextTime: new Date('2026-06-08T00:00:00.000Z')
+        }
+      }
+    );
   });
 });

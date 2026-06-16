@@ -13,6 +13,7 @@ import Avatar from '@fastgpt/web/components/common/Avatar';
 import dynamic from 'next/dynamic';
 import { POST } from '@/web/common/api/request';
 import MyTooltip from '@fastgpt/web/components/common/MyTooltip';
+import { getOAuthProviderCallbackUrl } from '@/web/support/user/loginRedirect/url';
 
 type Props = {
   children: React.ReactNode;
@@ -44,7 +45,7 @@ const FormLayout = ({ children, setPageType, pageType }: Props) => {
   }, [lastRoute, router.pathname, router.asPath]);
 
   const [oauthState] = useState(() => getNanoid(8));
-  const redirectUri = `${location.origin}/login/provider`;
+  const redirectUri = getOAuthProviderCallbackUrl(location.origin);
 
   const isWecomWorkTerminal = checkIsWecomTerminal();
 

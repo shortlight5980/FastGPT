@@ -41,6 +41,7 @@ import { preChatRound } from '@fastgpt/service/core/chat/utils/prepare';
 import { UsageSourceEnum } from '@fastgpt/global/support/wallet/usage/constants';
 import { removeDatasetCiteText } from '@fastgpt/global/core/ai/llm/utils';
 import { getRuntimeNodeResponseSummary } from '@fastgpt/service/core/workflow/dispatch/utils';
+import { assertAccountUsable } from '@fastgpt/service/support/user/accountDeletion/check';
 
 const stringifyMcpPluginOutput = (pluginOutput: unknown) => {
   if (pluginOutput === undefined || pluginOutput === null) {
@@ -132,10 +133,14 @@ export const workflow2InputSchema = (chatConfig?: {
  * 不再因为创建人的应用权限后续变化而隐藏工具，避免已发布集成被普通权限调整意外中断。
  */
 export const getMcpServerTools = async (key: string): Promise<Tool[]> => {
-  const mcp = await MongoMcpKey.findOne({ key }, { apps: 1 }).lean();
+  const mcp = await MongoMcpKey.findOne({ key }, { apps: 1, teamId: 1, tmbId: 1 }).lean();
   if (!mcp) {
     return Promise.reject(CommonErrEnum.invalidResource);
   }
+  await assertAccountUsable({
+    teamId: mcp.teamId ? String(mcp.teamId) : undefined,
+    tmbId: mcp.tmbId ? String(mcp.tmbId) : undefined
+  });
 
   // Get app list
   const appList = await MongoApp.find(
@@ -179,6 +184,15 @@ export const getMcpServerTools = async (key: string): Promise<Tool[]> => {
  * 不根据创建人的实时应用权限再次拒绝执行；如需撤销 MCP 访问，应更新或删除对应 MCP key。
  */
 export const callMcpServerTool = async ({ key, toolName, inputs }: toolCallProps) => {
+  const mcp = await MongoMcpKey.findOne({ key }, { apps: 1, teamId: 1, tmbId: 1 }).lean();
+  if (!mcp) {
+    return Promise.reject(CommonErrEnum.invalidResource);
+  }
+  await assertAccountUsable({
+    teamId: mcp.teamId ? String(mcp.teamId) : undefined,
+    tmbId: mcp.tmbId ? String(mcp.tmbId) : undefined
+  });
+
   const dispatchApp = async (app: AppSchemaType, variables: Record<string, any>) => {
     const isPlugin = app.type === AppTypeEnum.workflowTool;
     const pluginFixedTitle = isPlugin ? 'Mcp call' : undefined;
@@ -333,12 +347,6 @@ export const callMcpServerTool = async ({ key, toolName, inputs }: toolCallProps
       throw error;
     }
   };
-
-  const mcp = await MongoMcpKey.findOne({ key }, { apps: 1 }).lean();
-
-  if (!mcp) {
-    return Promise.reject(CommonErrEnum.invalidResource);
-  }
 
   // Get app list
   const appList = await MongoApp.find({

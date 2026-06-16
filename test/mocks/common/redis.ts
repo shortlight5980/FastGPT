@@ -60,6 +60,59 @@ const createRedisStorage = () => {
     clear: () => {
       storage.clear();
       expiryMap.clear();
+    },
+    hget: (key: string, field: string) => {
+      if (isExpired(key)) return null;
+      const value = storage.get(key);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      return value[field] ?? null;
+    },
+    hset: (key: string, field: string, value: any) => {
+      if (isExpired(key)) {
+        expiryMap.delete(key);
+      }
+      const current = storage.get(key);
+      const hash =
+        current && typeof current === 'object' && !Array.isArray(current) ? { ...current } : {};
+      const isNewField = !(field in hash);
+      hash[field] = value;
+      storage.set(key, hash);
+      return isNewField ? 1 : 0;
+    },
+    hdel: (key: string, ...fields: string[]) => {
+      if (isExpired(key)) return 0;
+      const current = storage.get(key);
+      if (!current || typeof current !== 'object' || Array.isArray(current)) return 0;
+
+      let deletedCount = 0;
+      const hash = { ...current };
+      for (const field of fields) {
+        if (field in hash) {
+          delete hash[field];
+          deletedCount++;
+        }
+      }
+      storage.set(key, hash);
+      return deletedCount;
+    },
+    hgetall: (key: string) => {
+      if (isExpired(key)) return {};
+      const value = storage.get(key);
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+      return { ...value };
+    },
+    hmset: (key: string, values: Record<string, any>) => {
+      if (isExpired(key)) {
+        expiryMap.delete(key);
+      }
+      const current = storage.get(key);
+      const hash =
+        current && typeof current === 'object' && !Array.isArray(current) ? { ...current } : {};
+      storage.set(key, {
+        ...hash,
+        ...values
+      });
+      return 'OK';
     }
   };
 };
@@ -117,11 +170,29 @@ const createSharedMockRedisClient = () => {
     }),
 
     // Hash operations
-    hget: vi.fn().mockResolvedValue(null),
-    hset: vi.fn().mockResolvedValue(1),
-    hdel: vi.fn().mockResolvedValue(1),
-    hgetall: vi.fn().mockResolvedValue({}),
-    hmset: vi.fn().mockResolvedValue('OK'),
+    hget: vi
+      .fn()
+      .mockImplementation((key: string, field: string) =>
+        Promise.resolve(globalRedisStorage.hget(key, field))
+      ),
+    hset: vi
+      .fn()
+      .mockImplementation((key: string, field: string, value: any) =>
+        Promise.resolve(globalRedisStorage.hset(key, field, value))
+      ),
+    hdel: vi
+      .fn()
+      .mockImplementation((key: string, ...fields: string[]) =>
+        Promise.resolve(globalRedisStorage.hdel(key, ...fields))
+      ),
+    hgetall: vi
+      .fn()
+      .mockImplementation((key: string) => Promise.resolve(globalRedisStorage.hgetall(key))),
+    hmset: vi
+      .fn()
+      .mockImplementation((key: string, values: Record<string, any>) =>
+        Promise.resolve(globalRedisStorage.hmset(key, values))
+      ),
 
     // Expiry operations
     expire: vi.fn().mockResolvedValue(1),

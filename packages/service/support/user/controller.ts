@@ -3,6 +3,12 @@ import { MongoUser } from './schema';
 import { getTmbInfoByTmbId, getUserDefaultTeam } from './team/controller';
 import { ERROR_ENUM } from '@fastgpt/global/common/error/errorCode';
 import { TeamPermission } from '@fastgpt/global/support/permission/user/controller';
+import {
+  formatAccountDeletionPendingResponse,
+  formatTeamAccountDeletionPendingResponse,
+  getPendingAccountDeletionByTeamId,
+  getPendingAccountDeletionByUserId
+} from './accountDeletion';
 
 export async function authUserExist({ userId, username }: { userId?: string; username?: string }) {
   if (userId) {
@@ -28,7 +34,7 @@ export async function getUserDetail({
       try {
         const result = await getTmbInfoByTmbId({ tmbId });
         return result;
-      } catch (error) {}
+      } catch {}
     }
     if (userId) {
       return getUserDefaultTeam({ userId });
@@ -40,6 +46,11 @@ export async function getUserDetail({
   if (!user) {
     return Promise.reject(ERROR_ENUM.unAuthorization);
   }
+
+  const [pendingAccountDeletion, pendingTeamAccountDeletion] = await Promise.all([
+    getPendingAccountDeletionByUserId(String(user._id)),
+    getPendingAccountDeletionByTeamId(String(tmb.teamId))
+  ]);
 
   const permission = isRoot ? new TeamPermission({ isOwner: true }) : tmb.permission;
   const team = {
@@ -57,6 +68,16 @@ export async function getUserDetail({
     permission,
     contact: user.contact,
     language: user.language,
-    tags: user.tags
+    tags: user.tags,
+    accountDeletion:
+      pendingAccountDeletion?.requestedAt && pendingAccountDeletion.scheduledDeleteAt
+        ? formatAccountDeletionPendingResponse(pendingAccountDeletion)
+        : undefined,
+    teamAccountDeletion:
+      pendingTeamAccountDeletion?.requestedAt &&
+      pendingTeamAccountDeletion.scheduledDeleteAt &&
+      String(pendingTeamAccountDeletion.userId) !== String(user._id)
+        ? formatTeamAccountDeletionPendingResponse(pendingTeamAccountDeletion)
+        : undefined
   };
 }

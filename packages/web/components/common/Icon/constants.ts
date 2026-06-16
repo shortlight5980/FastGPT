@@ -486,6 +486,7 @@ export const iconPaths = {
     import('./icons/support/account/customDomain/provider/tencent.svg'),
   'support/account/customDomain/provider/volcengine': () =>
     import('./icons/support/account/customDomain/provider/volcengine.svg'),
+  'support/account/cancellation': () => import('./icons/support/account/cancellation.svg'),
   'support/account/loginoutLight': () => import('./icons/support/account/loginoutLight.svg'),
   'support/account/plans': () => import('./icons/support/account/plans.svg'),
   'support/account/promotionLight': () => import('./icons/support/account/promotionLight.svg'),

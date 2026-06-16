@@ -1,15 +1,22 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from '@/web/support/user/api';
 import { UserAuthTypeEnum } from '@fastgpt/global/support/user/auth/constants';
 import { hashStr } from '@fastgpt/global/common/string/tools';
+import { DELETE, GET, POST, PUT } from '@/web/common/api/request';
+import { OAuthEnum } from '@fastgpt/global/support/user/constant';
 
 vi.mock('@/web/common/api/request', () => ({
+  DELETE: vi.fn(),
   GET: vi.fn(),
   POST: vi.fn(),
   PUT: vi.fn()
 }));
 
 describe('user api', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('should send auth code', async () => {
     const data = {
       username: 'test@test.com',
@@ -135,6 +142,58 @@ describe('user api', () => {
 
   it('should get pre login info', async () => {
     await api.getPreLogin('test@test.com');
+  });
+
+  it('should call account cancellation APIs', async () => {
+    await api.getAccountCancellationStatus();
+    expect(GET).toHaveBeenCalledWith('/support/user/account/cancellation/status');
+
+    await api.sendAccountCancellationCode({
+      captcha: 'captcha123',
+      googleToken: 'token123'
+    });
+    expect(POST).toHaveBeenCalledWith('/support/user/account/cancellation/sendCode', {
+      captcha: 'captcha123',
+      googleToken: 'token123'
+    });
+
+    await api.submitAccountCancellationByCode({ code: '123456' });
+    expect(POST).toHaveBeenCalledWith('/support/user/account/cancellation/submitByCode', {
+      code: '123456'
+    });
+
+    await api.getAccountCancellationWechatQR();
+    expect(POST).toHaveBeenCalledWith('/support/user/account/cancellation/wechat/getQR');
+
+    await api.checkAccountCancellationWechat({ code: 'wx-code' });
+    expect(POST).toHaveBeenCalledWith('/support/user/account/cancellation/wechat/check', {
+      code: 'wx-code'
+    });
+
+    await api.startAccountCancellationOAuth({ provider: OAuthEnum.github });
+    expect(POST).toHaveBeenCalledWith('/support/user/account/cancellation/oauth/start', {
+      provider: OAuthEnum.github
+    });
+
+    await api.confirmAccountCancellationOAuth({
+      provider: OAuthEnum.github,
+      state: 'state',
+      callbackUrl: 'https://fastgpt.example.com/login/provider',
+      props: {
+        code: 'oauth-code'
+      }
+    });
+    expect(POST).toHaveBeenCalledWith('/support/user/account/cancellation/oauth/confirm', {
+      provider: OAuthEnum.github,
+      state: 'state',
+      callbackUrl: 'https://fastgpt.example.com/login/provider',
+      props: {
+        code: 'oauth-code'
+      }
+    });
+
+    await api.cancelAccountCancellation();
+    expect(DELETE).toHaveBeenCalledWith('/support/user/account/cancellation/cancel');
   });
 
   it('should sync members', async () => {

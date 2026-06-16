@@ -22,6 +22,7 @@ import { useTranslation } from 'next-i18next';
 import Avatar from '@fastgpt/web/components/common/Avatar';
 import MyIcon from '@fastgpt/web/components/common/Icon';
 import MyTooltip from '@fastgpt/web/components/common/MyTooltip';
+import MyModal from '@fastgpt/web/components/common/MyModal';
 import { formatStorePrice2Read } from '@fastgpt/global/support/wallet/usage/tools';
 import { putUpdateMemberName } from '@/web/support/user/team/api';
 import { getDocPath } from '@/web/common/system/doc';
@@ -46,6 +47,8 @@ import MyDivider from '@fastgpt/web/components/common/MyDivider';
 import { useUploadAvatar } from '@fastgpt/web/common/file/hooks/useUploadAvatar';
 import { getUploadAvatarPresignedUrl } from '@/web/common/file/api';
 import { TeamErrEnum } from '@fastgpt/global/common/error/code/team';
+import { useQuery } from '@tanstack/react-query';
+import { getAccountCancellationStatus } from '@/web/support/user/api';
 import { i18nT } from '@fastgpt/global/common/i18n/utils';
 
 const RedeemCouponModal = dynamic(() => import('@/pageComponents/account/info/RedeemCouponModal'), {
@@ -721,11 +724,28 @@ const ButtonStyles = {
   userSelect: 'none' as any,
   fontSize: 'sm'
 };
+
 const Other = ({ onOpenContact }: { onOpenContact: () => void }) => {
   const { feConfigs, setNotSufficientModalType, subPlans } = useSystemStore();
   const { teamPlanStatus } = useUserStore();
   const { t } = useTranslation();
   const { isPc } = useSystem();
+  const router = useRouter();
+  const {
+    isOpen: isOpenAccountCancellationTip,
+    onClose: onCloseAccountCancellationTip,
+    onOpen: onOpenAccountCancellationTip
+  } = useDisclosure();
+  const { data: accountCancellationStatus } = useQuery(
+    ['accountCancellationStatus', 'accountInfo'],
+    getAccountCancellationStatus,
+    {
+      enabled: feConfigs?.accountCancellation?.enabled === true
+    }
+  );
+  const showAccountCancellation =
+    feConfigs?.accountCancellation?.enabled === true &&
+    accountCancellationStatus?.canRequestCancellation === true;
 
   const { runAsync: onFeedback } = useRequest(
     async () => {
@@ -795,7 +815,223 @@ const Other = ({ onOpenContact }: { onOpenContact: () => void }) => {
             </Box>
           </Flex>
         )}
+        {showAccountCancellation && (
+          <Flex onClick={onOpenAccountCancellationTip} {...ButtonStyles}>
+            <MyIcon name={'support/account/cancellation'} w={'18px'} color={'myGray.600'} />
+            <Box ml={2} flex={1}>
+              {t('account_info:account_cancellation_entry_label')}
+            </Box>
+          </Flex>
+        )}
       </Grid>
+      {isOpenAccountCancellationTip && (
+        <AccountCancellationTipModal
+          onClose={onCloseAccountCancellationTip}
+          onNext={() => router.push('/account/cancel')}
+        />
+      )}
     </Box>
+  );
+};
+
+const AccountCancellationTipModal = ({
+  onClose,
+  onNext
+}: {
+  onClose: () => void;
+  onNext: () => void;
+}) => {
+  const { t } = useTranslation();
+
+  const deletedEffects = [
+    {
+      key: 'account_cancellation_tip_effect_team_deleted',
+      label: ''
+    },
+    {
+      key: 'account_cancellation_tip_effect_team_assets_deleted',
+      label: t(
+        'account_info:account_cancellation_tip_effect_team_assets_deleted',
+        '团队内的应用、数据、成员、配置等信息将被删除，团队成员无法进入团队'
+      )
+    },
+    {
+      key: 'account_cancellation_tip_effect_personal_info_deleted',
+      label: t(
+        'account_info:account_cancellation_tip_effect_personal_info_deleted',
+        '该账号的个人信息将被删除或匿名化处理'
+      )
+    },
+    {
+      key: 'account_cancellation_tip_effect_leave_joined_teams',
+      label: t(
+        'account_info:account_cancellation_tip_effect_leave_joined_teams',
+        '该账号加入的其他团队将自动退出'
+      )
+    }
+  ];
+  const checklist = [
+    {
+      key: 'account_cancellation_tip_check_transfer',
+      label: t(
+        'account_info:account_cancellation_tip_check_transfer',
+        '已完成团队归属转移或团队数据处理'
+      )
+    },
+    {
+      key: 'account_cancellation_tip_check_orders',
+      label: t('account_info:account_cancellation_tip_check_orders', '已处理未完成订单、退款等事项')
+    },
+    {
+      key: 'account_cancellation_tip_check_backup',
+      label: t(
+        'account_info:account_cancellation_tip_check_backup',
+        '已备份重要数据、配置和业务资料'
+      )
+    },
+    {
+      key: 'account_cancellation_tip_check_service',
+      label: t(
+        'account_info:account_cancellation_tip_check_service',
+        '已确认相关服务停用不会影响线上业务'
+      )
+    }
+  ];
+
+  const paragraphStyles: BoxProps = {
+    mb: 0,
+    color: 'myGray.900',
+    fontSize: '14px',
+    fontWeight: 400,
+    lineHeight: '20px',
+    letterSpacing: '0.25px'
+  };
+
+  const listStyles: BoxProps = {
+    mt: 0,
+    mb: 0,
+    pl: '21px',
+    color: 'myGray.900',
+    fontSize: '14px',
+    lineHeight: '20px',
+    letterSpacing: '0.25px'
+  };
+
+  return (
+    <MyModal
+      isOpen
+      onClose={onClose}
+      isCentered
+      w={['90vw', '560px']}
+      maxW={['90vw', '560px']}
+      borderRadius={'10px'}
+      boxShadow={'0px 4px 10px 0px rgba(19, 51, 107, 0.1), 0px 0px 1px 0px rgba(19, 51, 107, 0.1)'}
+    >
+      <Flex direction={'column'} gap={6} p={'32px'}>
+        <Box
+          color={'black'}
+          fontSize={'20px'}
+          fontWeight={500}
+          lineHeight={'26px'}
+          letterSpacing={'0.15px'}
+        >
+          {t('account_info:account_cancellation_tip_title', '注销提示')}
+        </Box>
+
+        <Box>
+          <Box as="p" {...paragraphStyles}>
+            {t('account_info:account_cancellation_tip_intro', '注销账号前，请确认以下事项：')}
+          </Box>
+          <Box h={5} />
+          <Box as="p" {...paragraphStyles}>
+            {t(
+              'account_info:account_cancellation_tip_waiting_prefix',
+              '提交注销申请后，账号将进入 15 天等待期。等待期内，该账号将无法正常使用，所有'
+            )}
+            <Box as="span" color={'primary.600'}>
+              {t(
+                'account_info:account_cancellation_tip_waiting_highlight',
+                '依赖该账号对外提供服务的渠道将停止生效'
+              )}
+            </Box>
+            {t(
+              'account_info:account_cancellation_tip_waiting_suffix',
+              '，包括但不限于 API Key、分享链接和对外调用接口。系统通知信息仍可正常接收。'
+            )}
+          </Box>
+          <Box h={5} />
+          <Box as="p" {...paragraphStyles}>
+            {t(
+              'account_info:account_cancellation_tip_after_waiting',
+              '等待期结束后，账号注销将正式完成。届时：'
+            )}
+          </Box>
+          <Box as="ul" {...listStyles}>
+            {deletedEffects.map((item) => (
+              <Box key={item.key} as="li">
+                {item.key === 'account_cancellation_tip_effect_team_deleted' ? (
+                  <>
+                    {t(
+                      'account_info:account_cancellation_tip_effect_team_deleted_prefix',
+                      '该账号下'
+                    )}
+                    <Box as="span" color={'primary.600'}>
+                      {t(
+                        'account_info:account_cancellation_tip_effect_team_deleted_highlight',
+                        '创建的团队将被删除'
+                      )}
+                    </Box>
+                  </>
+                ) : (
+                  item.label
+                )}
+              </Box>
+            ))}
+          </Box>
+          <Box h={5} />
+          <Box as="p" {...paragraphStyles}>
+            {t(
+              'account_info:account_cancellation_tip_before_continue',
+              '在继续前，请确认你已处理好以下事项：'
+            )}
+          </Box>
+          <Box as="ul" {...listStyles}>
+            {checklist.map((item) => (
+              <Box key={item.key} as="li">
+                {item.label}
+              </Box>
+            ))}
+          </Box>
+          <Box h={5} />
+          <Box as="p" {...paragraphStyles}>
+            {t(
+              'account_info:account_cancellation_tip_verify_effect',
+              '完成身份验证后，注销申请将正式生效。'
+            )}
+          </Box>
+          <Box as="p" {...paragraphStyles}>
+            {t(
+              'account_info:account_cancellation_tip_cancel_available',
+              '在 15 天等待期内，你可以重新登录账号并取消注销。'
+            )}
+          </Box>
+          <Box as="p" {...paragraphStyles}>
+            {t(
+              'account_info:account_cancellation_tip_irreversible',
+              '账号注销完成后，如果你再次使用该账号注册，将会创建一个全新的账号，原账号数据无法恢复。'
+            )}
+          </Box>
+        </Box>
+
+        <Flex justifyContent={'flex-end'} gap={3}>
+          <Button size={'sm'} variant={'whiteBase'} px={'14px'} onClick={onClose}>
+            {t('common:Cancel')}
+          </Button>
+          <Button size={'sm'} px={'14px'} onClick={onNext}>
+            {t('account_info:account_cancellation_tip_next', '已知晓，下一步')}
+          </Button>
+        </Flex>
+      </Flex>
+    </MyModal>
   );
 };

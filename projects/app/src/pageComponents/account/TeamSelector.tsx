@@ -13,12 +13,10 @@ import { useChatStore } from '@/web/core/chat/context/useChatStore';
 const TeamSelector = ({
   showManage,
   showAvatar = true,
-  onChange,
   ...props
-}: Omit<ButtonProps, 'onChange'> & {
+}: ButtonProps & {
   showManage?: boolean;
   showAvatar?: boolean;
-  onChange?: () => void;
 }) => {
   const { t } = useTranslation();
   const router = useRouter();
@@ -38,8 +36,10 @@ const TeamSelector = ({
       resetChatCache();
     },
     {
-      onFinally: () => {
+      onSuccess: () => {
         router.reload();
+      },
+      onFinally: () => {
         setLoading(false);
       },
       errorToast: t('common:user.team.Switch Team Failed')
@@ -50,10 +50,12 @@ const TeamSelector = ({
     return myTeams.map((team) => ({
       ...(showAvatar ? { icon: team.avatar } : {}),
       iconSize: '1.25rem',
-      label: team.teamName,
+      label: team.accountDeletion
+        ? `${team.teamName} (${t('account_team:team_account_deletion_tag')})`
+        : team.teamName,
       value: team.teamId
     }));
-  }, [myTeams]);
+  }, [myTeams, showAvatar, t]);
 
   const formatTeamList = useMemo(() => {
     return [
