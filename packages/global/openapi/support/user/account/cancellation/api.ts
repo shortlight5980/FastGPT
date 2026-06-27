@@ -13,7 +13,11 @@ import {
  * Tags: ['User', 'AccountCancellation', 'Read']
  * ============================================================================ */
 
-const AccountCancellationAvailableVerifyMethodSchema = z.enum(AccountDeletionVerifyMethodEnum);
+const AccountCancellationAvailableVerifyMethodSchema = z.enum([
+  AccountDeletionVerifyMethodEnum.code,
+  AccountDeletionVerifyMethodEnum.wechat,
+  AccountDeletionVerifyMethodEnum.oauth
+]);
 
 export const AccountCancellationStatusResponseSchema = z.object({
   status: z

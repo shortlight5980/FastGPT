@@ -30,7 +30,7 @@ export type AccountDeletionSchemaType = {
 };
 
 export type AccountDeletionUserState = {
-  status: `${AccountDeletionStatusEnum.pending | AccountDeletionStatusEnum.finalizing}`;
+  status: AccountDeletionStatusEnum.pending | AccountDeletionStatusEnum.finalizing;
   requestedAt: Date;
   scheduledDeleteAt: Date;
 };
