@@ -47,6 +47,27 @@ describe('accountDeletion service', () => {
     } as any;
   });
 
+  const createPendingDeletionRecord = async ({
+    userId,
+    usernameSnapshot,
+    ownerTeamIds = []
+  }: {
+    userId: string;
+    usernameSnapshot: string;
+    ownerTeamIds?: string[];
+  }) => {
+    const requestedAt = new Date('2026-06-01T00:00:00.000Z');
+    return MongoAccountDeletion.create({
+      userId,
+      usernameSnapshot,
+      status: AccountDeletionStatusEnum.pending,
+      verifyMethod: AccountDeletionVerifyMethodEnum.code,
+      requestedAt,
+      scheduledDeleteAt: addDays(requestedAt, 15),
+      ownerTeamIds
+    });
+  };
+
   it('masks email and phone account values', () => {
     expect(maskAccount('alice@example.com')).toBe('al***e@example.com');
     expect(maskAccount('13800003911')).toBe('138****3911');
@@ -472,9 +493,10 @@ describe('accountDeletion service', () => {
       status: 'active'
     });
 
-    await submitAccountDeletion({
+    await createPendingDeletionRecord({
       userId: String(owner._id),
-      verifyMethod: AccountDeletionVerifyMethodEnum.code
+      usernameSnapshot: owner.username,
+      ownerTeamIds: [String(team._id)]
     });
 
     await expect(
@@ -521,9 +543,10 @@ describe('accountDeletion service', () => {
       status: 'active'
     });
 
-    await submitAccountDeletion({
+    await createPendingDeletionRecord({
       userId: String(owner._id),
-      verifyMethod: AccountDeletionVerifyMethodEnum.code
+      usernameSnapshot: owner.username,
+      ownerTeamIds: [String(team._id)]
     });
 
     await expect(
@@ -561,9 +584,9 @@ describe('accountDeletion service', () => {
       status: 'active'
     });
 
-    await submitAccountDeletion({
+    await createPendingDeletionRecord({
       userId: String(pendingUser._id),
-      verifyMethod: AccountDeletionVerifyMethodEnum.code
+      usernameSnapshot: pendingUser.username
     });
 
     await expect(

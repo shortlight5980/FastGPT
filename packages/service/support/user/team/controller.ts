@@ -23,7 +23,12 @@ import { getLogger, LogCategories } from '../../../common/logger';
 const logger = getLogger(LogCategories.MODULE.USER.TEAM);
 
 async function getTeamMember(match: Record<string, any>): Promise<TeamTmbItemType> {
-  const tmb = await MongoTeamMember.findOne(match).populate<{ team: TeamSchema }>('team').lean();
+  const tmb = (
+    await MongoTeamMember.find(match)
+      .populate<{ team: TeamSchema }>('team')
+      .sort({ createTime: 1 })
+      .lean()
+  ).find((item) => !!item.team);
   if (!tmb) {
     return Promise.reject('member not exist');
   }
@@ -86,7 +91,8 @@ export async function getUserDefaultTeam({ userId }: { userId: string }) {
     return Promise.reject('tmbId or userId is required');
   }
   return getTeamMember({
-    userId: new Types.ObjectId(userId)
+    userId: new Types.ObjectId(userId),
+    status: notLeaveStatus
   });
 }
 

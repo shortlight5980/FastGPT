@@ -15,6 +15,12 @@ import {
 } from '@fastgpt/service/support/user/accountDeletion';
 import { MongoUser } from '@fastgpt/service/support/user/schema';
 
+const authCertMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@fastgpt/service/support/permission/auth/common', () => ({
+  authCert: authCertMock
+}));
+
 vi.mock('@fastgpt/service/common/api/plusRequest', () => ({
   GET: vi.fn().mockResolvedValue({
     code: 'wx-code',
@@ -37,6 +43,14 @@ vi.mock('@fastgpt/service/support/user/accountDeletion', async (importOriginal) 
 
 describe('account cancellation sendCode API', () => {
   beforeEach(() => {
+    authCertMock.mockReset();
+    authCertMock.mockImplementation(async ({ req }: any) => ({
+      userId: req?.auth?.userId,
+      teamId: req?.auth?.teamId,
+      tmbId: req?.auth?.tmbId,
+      isRoot: req?.auth?.isRoot ?? false,
+      sessionId: req?.auth?.sessionId
+    }));
     vi.mocked(getAccountCancellationStatus).mockReset();
     vi.mocked(getAccountCancellationStatus).mockImplementation(async (props) => {
       const mod = await vi.importActual<
@@ -347,6 +361,13 @@ describe('account cancellation sendCode API', () => {
     });
 
     expect(startRes.code).toBe(200);
+    expect(authCertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authToken: true,
+        allowUserAccountDeletionPending: true,
+        allowCurrentUserOwnedTeamAccountDeletionPending: true
+      })
+    );
     expect(createAccountDeletionOAuthState).toHaveBeenCalledWith({
       userId: String(user._id),
       provider: OAuthEnum.github
@@ -380,6 +401,13 @@ describe('account cancellation sendCode API', () => {
     });
 
     expect(confirmRes.code).toBe(200);
+    expect(authCertMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        authToken: true,
+        allowUserAccountDeletionPending: true,
+        allowCurrentUserOwnedTeamAccountDeletionPending: true
+      })
+    );
     expect(confirmRes.data).toEqual({
       status: 'pending',
       requestedAt: new Date('2026-06-01T00:00:00.000Z'),
@@ -427,6 +455,13 @@ describe('account cancellation sendCode API', () => {
     });
 
     expect(startRes.code).toBe(200);
+    expect(authCertMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authToken: true,
+        allowUserAccountDeletionPending: true,
+        allowCurrentUserOwnedTeamAccountDeletionPending: true
+      })
+    );
     expect(startRes.data).toEqual({
       url: 'https://sso.example.com/login/oauth?state=oauth-state',
       state: 'oauth-state'

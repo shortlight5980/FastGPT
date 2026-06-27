@@ -5,6 +5,7 @@ import { MongoAccountDeletion } from '@fastgpt/service/support/user/accountDelet
 import { assertAccountUsable } from '@fastgpt/service/support/user/accountDeletion/check';
 import { AccountDeletionStatusEnum } from '@fastgpt/global/support/user/accountDeletion/constants';
 import { TeamErrEnum } from '@fastgpt/global/common/error/code/team';
+import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
 import { getUser } from '@test/datas/users';
 import { MongoTeamMember } from '@fastgpt/service/support/user/team/teamMemberSchema';
 
@@ -99,5 +100,56 @@ describe('permission auth common', () => {
         tmbId: String(targetPendingMembership._id)
       })
     ).rejects.toBe(TeamErrEnum.accountDeletionPending);
+  });
+
+  it('allows owner-pending self only when both user-pending and owner-team escape flags are enabled', async () => {
+    const owner = await getUser('auth-self-pending-owner@example.com');
+
+    await MongoAccountDeletion.create({
+      _id: new Types.ObjectId(),
+      userId: owner.userId,
+      usernameSnapshot: 'auth-self-pending-owner@example.com',
+      status: AccountDeletionStatusEnum.pending,
+      requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+      scheduledDeleteAt: new Date('2026-06-16T00:00:00.000Z'),
+      ownerTeamIds: [owner.teamId]
+    });
+
+    const sessionToken = await createUserSession({
+      userId: owner.userId,
+      teamId: owner.teamId,
+      tmbId: owner.tmbId,
+      ip: '127.0.0.1'
+    });
+
+    await expect(
+      parseHeaderCert({
+        req: {
+          headers: {
+            token: sessionToken
+          }
+        } as any,
+        authToken: true,
+        allowCurrentUserOwnedTeamAccountDeletionPending: true
+      })
+    ).rejects.toBe(UserErrEnum.accountDeletionPending);
+
+    await expect(
+      parseHeaderCert({
+        req: {
+          headers: {
+            token: sessionToken
+          }
+        } as any,
+        authToken: true,
+        allowUserAccountDeletionPending: true,
+        allowCurrentUserOwnedTeamAccountDeletionPending: true
+      })
+    ).resolves.toMatchObject({
+      userId: owner.userId,
+      teamId: owner.teamId,
+      tmbId: owner.tmbId,
+      sessionId: sessionToken
+    });
   });
 });

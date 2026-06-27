@@ -98,6 +98,81 @@ export const delUserAllSession = async (userId: string, whiteList?: (string | un
   }
 };
 
+const getUserSessionKeys = async (userId: string) => {
+  return getAllKeysByPrefix(`${redisPrefix}${String(userId)}`);
+};
+
+/**
+ * 只重绑定指向指定团队/成员的 session，避免团队删除时把用户在其它团队的登录态一起清掉。
+ */
+export const replaceUserTeamSessions = async ({
+  userId,
+  fromTeamId,
+  fromTmbId,
+  toTeamId,
+  toTmbId
+}: {
+  userId: string;
+  fromTeamId: string;
+  fromTmbId?: string;
+  toTeamId: string;
+  toTmbId: string;
+}) => {
+  const redis = getGlobalRedisConnection();
+  const keys = await getUserSessionKeys(userId);
+
+  await Promise.all(
+    keys.map(async (key) => {
+      const data = await retryFn(() => redis.hgetall(key));
+      if (!data || Object.keys(data).length === 0) return;
+
+      const matchesDeletedContext =
+        data.teamId === String(fromTeamId) || (!!fromTmbId && data.tmbId === String(fromTmbId));
+      if (!matchesDeletedContext) return;
+
+      await retryFn(() =>
+        redis.hmset(key, {
+          teamId: String(toTeamId),
+          tmbId: String(toTmbId)
+        })
+      );
+    })
+  );
+};
+
+/**
+ * 只删除指向指定团队/成员的 session，用于团队删除后清理失效登录态。
+ */
+export const delUserTeamSessions = async ({
+  userId,
+  teamId,
+  tmbId
+}: {
+  userId: string;
+  teamId: string;
+  tmbId?: string;
+}) => {
+  const redis = getGlobalRedisConnection();
+  const keys = await getUserSessionKeys(userId);
+
+  const deleteKeys = (
+    await Promise.all(
+      keys.map(async (key) => {
+        const data = await retryFn(() => redis.hgetall(key));
+        if (!data || Object.keys(data).length === 0) return null;
+
+        const matchesDeletedContext =
+          data.teamId === String(teamId) || (!!tmbId && data.tmbId === String(tmbId));
+        return matchesDeletedContext ? key : null;
+      })
+    )
+  ).filter(Boolean) as string[];
+
+  if (deleteKeys.length > 0) {
+    await redis.del(deleteKeys);
+  }
+};
+
 // 会根据创建时间，删除超出客户端登录限制的 session
 const delRedundantSession = async (userId: string) => {
   // 至少为 1，默认为 10

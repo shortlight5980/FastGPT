@@ -102,7 +102,6 @@ export const getAccountCancellationEligibility = ({
   username
 }: {
   username?: string;
-  contact?: string;
 }): AccountCancellationResolveResult =>
   resolveAccountCancellation({
     username,

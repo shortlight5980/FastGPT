@@ -24,7 +24,9 @@ async function handler(
 ): Promise<StartAccountCancellationOAuthResponseType> {
   const { userId } = await authCert({
     req,
-    authToken: true
+    authToken: true,
+    allowUserAccountDeletionPending: true,
+    allowCurrentUserOwnedTeamAccountDeletionPending: true
   });
   const { provider } = parseApiInput({
     req,

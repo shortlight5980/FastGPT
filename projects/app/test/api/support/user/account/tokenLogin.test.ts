@@ -11,9 +11,15 @@ import { MongoAccountDeletion } from '@fastgpt/service/support/user/accountDelet
 import { AccountDeletionStatusEnum } from '@fastgpt/global/support/user/accountDeletion/constants';
 
 const authCertMock = vi.hoisted(() => vi.fn());
+const setCookieMock = vi.hoisted(() => vi.fn());
+const createUserSessionMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@fastgpt/service/support/permission/auth/common', () => ({
-  authCert: authCertMock
+  authCert: authCertMock,
+  setCookie: setCookieMock
+}));
+vi.mock('@fastgpt/service/support/user/session', () => ({
+  createUserSession: createUserSessionMock
 }));
 
 describe('tokenLogin API', () => {
@@ -42,6 +48,7 @@ describe('tokenLogin API', () => {
       lastLoginTmbId: testTmb._id
     });
     vi.clearAllMocks();
+    createUserSessionMock.mockResolvedValue('healed-token');
     authCertMock.mockResolvedValue({
       userId: String(testUser._id),
       teamId: String(testTeam._id),
@@ -243,5 +250,52 @@ describe('tokenLogin API', () => {
     });
     expect(res.data.accountDeletion).toBeUndefined();
     expect(ownerTmb).toBeTruthy();
+  });
+
+  it('heals stale team sessions to another active membership and refreshes cookie', async () => {
+    const fallbackTeam = await MongoTeam.create({
+      name: 'Fallback Team',
+      ownerId: testUser._id
+    });
+    await initTeamFreePlan({ teamId: String(fallbackTeam._id) });
+    const fallbackTmb = await MongoTeamMember.create({
+      teamId: fallbackTeam._id,
+      userId: testUser._id,
+      status: 'active',
+      role: 'owner'
+    });
+
+    await MongoTeamMember.deleteOne({ _id: testTmb._id });
+    authCertMock.mockResolvedValueOnce({
+      userId: String(testUser._id),
+      teamId: String(testTeam._id),
+      tmbId: String(testTmb._id),
+      isRoot: false
+    });
+
+    const res = await Call(tokenLoginApi.default, {
+      auth: {
+        userId: String(testUser._id),
+        teamId: String(testTeam._id),
+        tmbId: String(testTmb._id),
+        isRoot: false,
+        sessionId: 'session-stale'
+      } as any
+    });
+
+    expect(res.code).toBe(200);
+    expect(res.data.team.teamId).toBe(String(fallbackTeam._id));
+    expect(res.data.team.tmbId).toBe(String(fallbackTmb._id));
+    expect(createUserSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: String(testUser._id),
+        teamId: String(fallbackTeam._id),
+        tmbId: String(fallbackTmb._id)
+      })
+    );
+    expect(setCookieMock).toHaveBeenCalledWith(expect.anything(), 'healed-token');
+
+    const updatedUser = await MongoUser.findById(testUser._id).lean();
+    expect(String(updatedUser?.lastLoginTmbId)).toBe(String(fallbackTmb._id));
   });
 });

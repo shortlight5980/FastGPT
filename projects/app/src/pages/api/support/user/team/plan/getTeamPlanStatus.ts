@@ -19,7 +19,10 @@ async function handler(
   try {
     const { teamId } = await authCert({
       req,
-      authToken: true
+      authToken: true,
+      allowUserAccountDeletionPending: true,
+      allowCurrentUserOwnedTeamAccountDeletionPending: true,
+      allowCurrentSessionTeamAccountDeletionPending: true
     });
 
     const [

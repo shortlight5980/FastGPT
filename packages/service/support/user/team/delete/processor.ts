@@ -7,7 +7,6 @@ import { MongoMemberGroupModel } from '../../../permission/memberGroup/memberGro
 import { MongoOrgMemberModel } from '../../../permission/org/orgMemberSchema';
 import { MongoOrgModel } from '../../../permission/org/orgSchema';
 import { MongoResourcePermission } from '../../../permission/schema';
-import { delUserAllSession } from '../../session';
 import { MongoTeamMember } from '../teamMemberSchema';
 import { MongoTeam } from '../teamSchema';
 import { MongoMcpKey } from '../../../mcp/schema';
@@ -21,6 +20,9 @@ import { MongoEvaluation } from '../../../../core/app/evaluation/evalSchema';
 import { MongoEvalItem } from '../../../../core/app/evaluation/evalItemSchema';
 import { MongoTeamSub } from '../../../../support/wallet/sub/schema';
 import { getLogger, LogCategories } from '../../../../common/logger';
+import { MongoUser } from '../../schema';
+import { TeamMemberStatusEnum } from '@fastgpt/global/support/user/team/constant';
+import { delUserTeamSessions, replaceUserTeamSessions } from '../../session';
 
 const logger = getLogger(LogCategories.MODULE.USER.TEAM);
 
@@ -125,8 +127,77 @@ export const teamDeleteProcessor: Processor<TeamDeleteJobData> = async (job) => 
       teamId
     });
 
-    // 删除所有成员的 session
-    await Promise.all(members.map((member) => delUserAllSession(member.userId)));
+    const fallbackMembers = (await MongoTeamMember.find({
+      userId: {
+        $in: members.map((member) => member.userId)
+      },
+      teamId: {
+        $ne: teamId
+      },
+      status: TeamMemberStatusEnum.active
+    })
+      .populate<{ team: { _id: string } | null }>('team', '_id')
+      .sort({ createTime: 1 })
+      .lean()) as Array<{
+      _id: string;
+      userId: string;
+      teamId: string;
+      team?: { _id: string } | null;
+    }>;
+
+    const fallbackMemberMap = new Map<string, (typeof fallbackMembers)[number]>();
+    for (const fallbackMember of fallbackMembers) {
+      const userId = String(fallbackMember.userId);
+      if (!fallbackMember.team || fallbackMemberMap.has(userId)) continue;
+      fallbackMemberMap.set(userId, fallbackMember);
+    }
+
+    await Promise.all(
+      members.map(async (member) => {
+        const fallbackMember = fallbackMemberMap.get(String(member.userId));
+
+        if (fallbackMember) {
+          await Promise.all([
+            replaceUserTeamSessions({
+              userId: String(member.userId),
+              fromTeamId: String(teamId),
+              fromTmbId: String(member._id),
+              toTeamId: String(fallbackMember.teamId),
+              toTmbId: String(fallbackMember._id)
+            }),
+            MongoUser.updateOne(
+              {
+                _id: member.userId,
+                lastLoginTmbId: member._id
+              },
+              {
+                lastLoginTmbId: fallbackMember._id
+              }
+            )
+          ]);
+          return;
+        }
+
+        await Promise.all([
+          delUserTeamSessions({
+            userId: String(member.userId),
+            teamId: String(teamId),
+            tmbId: String(member._id)
+          }),
+          MongoUser.updateOne(
+            {
+              _id: member.userId,
+              lastLoginTmbId: member._id
+            },
+            {
+              $unset: {
+                lastLoginTmbId: 1
+              }
+            }
+          )
+        ]);
+      })
+    );
 
     await MongoTeamMember.deleteMany({
       teamId
