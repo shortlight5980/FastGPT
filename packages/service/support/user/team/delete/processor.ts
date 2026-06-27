@@ -41,12 +41,20 @@ export const teamDeleteProcessor: Processor<TeamDeleteJobData> = async (job) => 
     // 2. 先删除知识库和应用（它们内部有自己的队列）
     await deleteTeamAllDatasets(teamId);
     await onDelAllApp(teamId);
+    // 评估项不带 teamId，需要先按团队拿到评估 ID 再级联删除。
+    const evaluations = await MongoEvaluation.find({ teamId }, '_id').lean();
+    const evaluationIds = evaluations.map((item) => item._id);
+
+    // 删除评估项
+    if (evaluationIds.length > 0) {
+      await MongoEvalItem.deleteMany({
+        evalId: {
+          $in: evaluationIds
+        }
+      });
+    }
     // 删除评估
     await MongoEvaluation.deleteMany({
-      teamId
-    });
-    // 删除评估项
-    await MongoEvalItem.deleteMany({
       teamId
     });
 
