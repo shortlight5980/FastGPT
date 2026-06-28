@@ -27,7 +27,8 @@ import { getOAuthProviderCallbackUrl } from '@/web/support/user/loginRedirect/ur
 import {
   claimOAuthCallbackByPath,
   getLoginProviderOAuthCallbackBranch,
-  handleAccountCancellationOAuthCallback
+  handleAccountCancellationOAuthCallback,
+  isLoginProviderOAuthCallbackReady
 } from '@/web/support/user/loginRedirect/oauthCallback';
 
 let isOauthLogging = false;
@@ -189,8 +190,15 @@ const provider = () => {
       return;
     }
 
+    const isCallbackReady = isLoginProviderOAuthCallbackReady({
+      routerReady: router.isReady,
+      props,
+      state,
+      authType: loginStore?.authType,
+      provider: loginStore?.provider
+    });
     const callbackBranch = getLoginProviderOAuthCallbackBranch({
-      hasProps: !!props,
+      isCallbackReady,
       initd,
       loginStoreHydrated,
       isOauthLogging,
@@ -258,6 +266,7 @@ const provider = () => {
     error,
     loginStore,
     router,
+    router.isReady,
     state,
     t,
     toast,

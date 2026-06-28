@@ -5,7 +5,8 @@ import {
   buildOAuthCallbackRequestKey,
   claimOAuthCallbackRequest,
   getLoginProviderOAuthCallbackBranch,
-  handleAccountCancellationOAuthCallback
+  handleAccountCancellationOAuthCallback,
+  isLoginProviderOAuthCallbackReady
 } from '../../../../src/web/support/user/loginRedirect/oauthCallback';
 import { OAuthEnum } from '@fastgpt/global/support/user/constant';
 
@@ -13,7 +14,7 @@ describe('OAuth callback dedupe', () => {
   it('waits for loginStore hydration before routing account cancellation callbacks', () => {
     expect(
       getLoginProviderOAuthCallbackBranch({
-        hasProps: true,
+        isCallbackReady: true,
         initd: true,
         loginStoreHydrated: false,
         isOauthLogging: false,
@@ -23,13 +24,51 @@ describe('OAuth callback dedupe', () => {
 
     expect(
       getLoginProviderOAuthCallbackBranch({
-        hasProps: true,
+        isCallbackReady: true,
         initd: true,
         loginStoreHydrated: true,
         isOauthLogging: false,
         authType: 'accountCancellation'
       })
     ).toBe('accountCancellation');
+  });
+
+  it('waits until Next router has real OAuth callback params before claiming', () => {
+    expect(
+      isLoginProviderOAuthCallbackReady({
+        routerReady: false,
+        props: {},
+        state: undefined
+      })
+    ).toBe(false);
+
+    expect(
+      isLoginProviderOAuthCallbackReady({
+        routerReady: true,
+        props: {},
+        state: undefined
+      })
+    ).toBe(false);
+
+    expect(
+      isLoginProviderOAuthCallbackReady({
+        routerReady: true,
+        props: { code: 'oauth-code' },
+        state: undefined,
+        authType: 'accountCancellation',
+        provider: OAuthEnum.github
+      })
+    ).toBe(false);
+
+    expect(
+      isLoginProviderOAuthCallbackReady({
+        routerReady: true,
+        props: { code: 'oauth-code' },
+        state: undefined,
+        authType: 'accountCancellation',
+        provider: OAuthEnum.sso
+      })
+    ).toBe(true);
   });
 
   it('normalizes hash fragment from callback request key', () => {

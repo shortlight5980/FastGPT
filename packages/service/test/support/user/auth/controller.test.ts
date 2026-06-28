@@ -63,5 +63,31 @@ describe('support/user/auth/controller', () => {
         code: '654321'
       });
     });
+
+    it('rejects expired auth codes that are still waiting for TTL cleanup', async () => {
+      await addAuthCode({
+        key: 'accountDeletion:user3',
+        type: UserAuthTypeEnum.accountDeletion,
+        code: '111222',
+        expiredTime: new Date(Date.now() - 60_000)
+      });
+
+      await expect(
+        authCode({
+          key: 'accountDeletion:user3',
+          type: UserAuthTypeEnum.accountDeletion,
+          code: '111222'
+        })
+      ).rejects.toBeInstanceOf(UserError);
+
+      await expect(
+        MongoUserAuth.findOne({
+          key: 'accountDeletion:user3',
+          type: UserAuthTypeEnum.accountDeletion
+        }).lean()
+      ).resolves.toMatchObject({
+        code: '111222'
+      });
+    });
   });
 });

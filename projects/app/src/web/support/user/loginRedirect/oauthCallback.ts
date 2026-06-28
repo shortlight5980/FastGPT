@@ -29,6 +29,42 @@ export type LoginProviderOAuthCallbackBranch =
   | 'accountCancellation'
   | 'login';
 
+const hasOAuthCredentialProps = (props: Record<string, string>) => {
+  return Boolean(props.code || props.token);
+};
+
+/**
+ * Next router 首次渲染时 query 可能还是空对象，必须等路由就绪且回调参数出现后
+ * 才能 claim 一次性 OAuth 回调，避免把空 query 当成真实回调消费。
+ */
+export const isLoginProviderOAuthCallbackReady = ({
+  routerReady,
+  props,
+  state,
+  authType,
+  provider
+}: {
+  routerReady: boolean;
+  props: Record<string, string>;
+  state?: string;
+  authType?: 'login' | 'accountCancellation';
+  provider?: OAuthEnum;
+}) => {
+  if (!routerReady || !hasOAuthCredentialProps(props)) {
+    return false;
+  }
+
+  if (provider === OAuthEnum.sso) {
+    return true;
+  }
+
+  if (authType === 'accountCancellation' || provider) {
+    return Boolean(state);
+  }
+
+  return true;
+};
+
 /**
  * 判断登录 provider 页面当前是否可以消费 OAuth 回调，以及应进入哪个业务分支。
  *
@@ -37,19 +73,19 @@ export type LoginProviderOAuthCallbackBranch =
  * 被普通登录分支 claim 掉，导致一次性 callback 提前失效。
  */
 export const getLoginProviderOAuthCallbackBranch = ({
-  hasProps,
+  isCallbackReady,
   initd,
   loginStoreHydrated,
   isOauthLogging,
   authType
 }: {
-  hasProps: boolean;
+  isCallbackReady: boolean;
   initd: boolean;
   loginStoreHydrated: boolean;
   isOauthLogging: boolean;
   authType?: 'login' | 'accountCancellation';
 }): LoginProviderOAuthCallbackBranch => {
-  if (!hasProps || !initd || !loginStoreHydrated) {
+  if (!isCallbackReady || !initd || !loginStoreHydrated) {
     return 'waiting';
   }
 

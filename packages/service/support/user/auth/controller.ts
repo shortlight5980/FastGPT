@@ -46,7 +46,8 @@ export const authCode = async (props: z.infer<typeof authCodeSchema>) => {
       {
         key,
         type,
-        code
+        code,
+        expiredTime: { $gt: new Date() }
       },
       undefined,
       { session }

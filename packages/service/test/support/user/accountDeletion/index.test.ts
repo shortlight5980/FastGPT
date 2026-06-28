@@ -5,9 +5,11 @@ import {
   consumeAccountDeletionOAuthState,
   createAccountDeletionOAuthState,
   formatAccountDeletionPendingResponse,
+  getAccountDeletionAuthKey,
   getAccountCancellationStatus,
   maskAccount,
   submitAccountDeletion,
+  submitAccountDeletionByCode,
   submitAccountDeletionByOAuth,
   submitAccountDeletionByWechat
 } from '../../../../support/user/accountDeletion';
@@ -22,6 +24,8 @@ import { TeamMemberRoleEnum } from '@fastgpt/global/support/user/team/constant';
 import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
 import { TeamErrEnum } from '@fastgpt/global/common/error/code/team';
 import { OAuthEnum } from '@fastgpt/global/support/user/constant';
+import { UserAuthTypeEnum } from '@fastgpt/global/support/user/auth/constants';
+import { addAuthCode } from '../../../../support/user/auth/controller';
 
 describe('accountDeletion service', () => {
   beforeEach(() => {
@@ -353,6 +357,30 @@ describe('accountDeletion service', () => {
     const record = await MongoAccountDeletion.findOne({ userId: user._id }).lean();
     expect(record?.verifyMethod).toBe(AccountDeletionVerifyMethodEnum.wechat);
     expect(record?.verifyProvider).toBe(OAuthEnum.wechat);
+  });
+
+  it('rejects expired account deletion codes before Mongo TTL cleanup removes them', async () => {
+    const user = await MongoUser.create({
+      username: 'expired-code@example.com',
+      contact: 'expired-code@example.com',
+      password: '123456'
+    });
+
+    await addAuthCode({
+      key: getAccountDeletionAuthKey(String(user._id)),
+      type: UserAuthTypeEnum.accountDeletion,
+      code: '123456',
+      expiredTime: new Date('2026-05-31T23:59:00.000Z')
+    });
+
+    await expect(
+      submitAccountDeletionByCode({
+        userId: String(user._id),
+        code: '123456'
+      })
+    ).rejects.toThrow('common:error.code_error');
+
+    await expect(MongoAccountDeletion.findOne({ userId: user._id }).lean()).resolves.toBeNull();
   });
 
   it('submits account deletion by oauth and records provider after state validation', async () => {
