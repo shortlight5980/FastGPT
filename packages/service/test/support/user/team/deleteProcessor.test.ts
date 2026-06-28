@@ -283,6 +283,55 @@ describe('teamDeleteProcessor', () => {
     expect(delUserTeamSessions).not.toHaveBeenCalled();
   });
 
+  it('skips fallback teams that are already soft deleted', async () => {
+    const populateFallbackMembers = vi.fn().mockReturnThis();
+    vi.mocked(MongoTeamMember.find)
+      .mockResolvedValueOnce([
+        {
+          _id: 'deleted-tmb-4',
+          userId: 'user-4',
+          teamId: 'team-1'
+        }
+      ] as any)
+      .mockReturnValueOnce({
+        populate: populateFallbackMembers,
+        sort: vi.fn().mockReturnThis(),
+        lean: vi.fn().mockResolvedValue([
+          {
+            _id: 'soft-deleted-fallback-tmb',
+            userId: 'user-4',
+            teamId: 'team-2',
+            team: {
+              _id: 'team-2',
+              deleteTime: new Date('2026-06-01T00:00:00.000Z')
+            }
+          },
+          {
+            _id: 'healthy-fallback-tmb',
+            userId: 'user-4',
+            teamId: 'team-3',
+            team: { _id: 'team-3' }
+          }
+        ])
+      } as any);
+
+    await teamDeleteProcessor({
+      data: {
+        teamId: 'team-1'
+      }
+    } as any);
+
+    expect(populateFallbackMembers).toHaveBeenCalledWith('team', '_id deleteTime');
+    expect(replaceUserTeamSessions).toHaveBeenCalledWith({
+      userId: 'user-4',
+      fromTeamId: 'team-1',
+      fromTmbId: 'deleted-tmb-4',
+      toTeamId: 'team-3',
+      toTmbId: 'healthy-fallback-tmb'
+    });
+    expect(delUserTeamSessions).not.toHaveBeenCalled();
+  });
+
   it('only clears deleted-team sessions when the member has no fallback team', async () => {
     vi.mocked(MongoTeamMember.find)
       .mockResolvedValueOnce([

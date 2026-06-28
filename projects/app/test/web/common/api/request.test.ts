@@ -51,6 +51,7 @@ describe('request utils', () => {
     vi.clearAllMocks();
     Object.keys(maxQuantityMap).forEach((key) => delete maxQuantityMap[key]);
     mockLocation.pathname = '/test';
+    mockLocation.search = '';
     dispatchEventMock.mockReturnValue(true);
   });
 
@@ -178,6 +179,23 @@ describe('request utils', () => {
         }
       };
       await expect(responseError(err)).rejects.toEqual({ message: 'common:unauth_token' });
+      expect(clearToken).not.toHaveBeenCalled();
+      expect(mockLocation.replace).not.toHaveBeenCalled();
+    });
+
+    it('should not redirect token errors from the OAuth provider callback page', async () => {
+      mockLocation.pathname = '/test-route/login/provider';
+      mockLocation.search = '?code=oauth-code&state=oauth-state';
+      const err = {
+        response: {
+          data: {
+            code: tokenErrorCode
+          }
+        }
+      };
+
+      await expect(responseError(err)).rejects.toEqual({ message: 'common:unauth_token' });
+      expect(dispatchEventMock).toHaveBeenCalledWith(expect.any(CustomEvent));
       expect(clearToken).not.toHaveBeenCalled();
       expect(mockLocation.replace).not.toHaveBeenCalled();
     });

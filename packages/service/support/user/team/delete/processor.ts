@@ -138,13 +138,13 @@ export const teamDeleteProcessor: Processor<TeamDeleteJobData> = async (job) => 
       },
       status: TeamMemberStatusEnum.active
     })
-      .populate<{ team: { _id: string } | null }>('team', '_id')
+      .populate<{ team: { _id: string; deleteTime?: Date } | null }>('team', '_id deleteTime')
       .sort({ createTime: 1 })
       .lean()) as Array<{
       _id: string;
       userId: string;
       teamId: string;
-      team?: { _id: string } | null;
+      team?: { _id: string; deleteTime?: Date } | null;
     }>;
     const fallbackTeamIds = Array.from(
       new Set(
@@ -181,6 +181,7 @@ export const teamDeleteProcessor: Processor<TeamDeleteJobData> = async (job) => 
       const userId = String(fallbackMember.userId);
       if (
         !fallbackMember.team ||
+        fallbackMember.team.deleteTime ||
         fallbackMemberMap.has(userId) ||
         pendingOwnerTeamIdSet.has(String(fallbackMember.team._id))
       ) {

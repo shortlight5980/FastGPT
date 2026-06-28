@@ -124,7 +124,8 @@ function responseError(err: any) {
   const isOutlinkPage = {
     [`${subRoute}/chat/share`]: true,
     [`${subRoute}/price`]: true,
-    [`${subRoute}/login`]: true
+    [`${subRoute}/login`]: true,
+    [`${subRoute}/login/provider`]: true
   }[pathname];
 
   const data = err?.response?.data || err;
