@@ -26,6 +26,7 @@ import type { LangEnum } from '@fastgpt/global/common/i18n/type';
 import { getOAuthProviderCallbackUrl } from '@/web/support/user/loginRedirect/url';
 import {
   claimOAuthCallbackByPath,
+  getLoginProviderOAuthCallbackBranch,
   handleAccountCancellationOAuthCallback
 } from '@/web/support/user/loginRedirect/oauthCallback';
 
@@ -33,7 +34,7 @@ let isOauthLogging = false;
 
 const provider = () => {
   const { t, i18n } = useTranslation();
-  const { initd, loginStore, setLoginStore } = useSystemStore();
+  const { initd, loginStore, loginStoreHydrated, setLoginStore } = useSystemStore();
   const { setUserInfo } = useUserStore();
   const router = useRouter();
   const { state, error, ...props } = router.query as Record<string, string>;
@@ -188,15 +189,23 @@ const provider = () => {
       return;
     }
 
-    if (!props || !initd) return;
+    const callbackBranch = getLoginProviderOAuthCallbackBranch({
+      hasProps: !!props,
+      initd,
+      loginStoreHydrated,
+      isOauthLogging,
+      authType: loginStore?.authType
+    });
 
-    if (isOauthLogging) return;
+    if (callbackBranch === 'waiting' || callbackBranch === 'duplicate') return;
 
     isOauthLogging = true;
 
     (async () => {
       try {
-        if (loginStore?.authType === 'accountCancellation') {
+        if (callbackBranch === 'accountCancellation') {
+          if (!loginStore) return;
+
           await handleAccountCancellationOAuthCallback({
             asPath: router.asPath,
             provider: loginStore.provider,
@@ -243,6 +252,7 @@ const provider = () => {
     })();
   }, [
     initd,
+    loginStoreHydrated,
     authProps,
     confirmAccountCancellation,
     error,

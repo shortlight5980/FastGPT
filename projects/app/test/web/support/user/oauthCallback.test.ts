@@ -4,11 +4,34 @@ import {
   claimOAuthCallbackByPath,
   buildOAuthCallbackRequestKey,
   claimOAuthCallbackRequest,
+  getLoginProviderOAuthCallbackBranch,
   handleAccountCancellationOAuthCallback
 } from '../../../../src/web/support/user/loginRedirect/oauthCallback';
 import { OAuthEnum } from '@fastgpt/global/support/user/constant';
 
 describe('OAuth callback dedupe', () => {
+  it('waits for loginStore hydration before routing account cancellation callbacks', () => {
+    expect(
+      getLoginProviderOAuthCallbackBranch({
+        hasProps: true,
+        initd: true,
+        loginStoreHydrated: false,
+        isOauthLogging: false,
+        authType: undefined
+      })
+    ).toBe('waiting');
+
+    expect(
+      getLoginProviderOAuthCallbackBranch({
+        hasProps: true,
+        initd: true,
+        loginStoreHydrated: true,
+        isOauthLogging: false,
+        authType: 'accountCancellation'
+      })
+    ).toBe('accountCancellation');
+  });
+
   it('normalizes hash fragment from callback request key', () => {
     expect(
       buildOAuthCallbackRequestKey('/login/provider?code=oauth-code&state=oauth-state#_=_')

@@ -489,7 +489,7 @@ describe('accountDeletion service', () => {
     await MongoTeamMember.create({
       userId: memberUser._id,
       teamId: team._id,
-      role: TeamMemberRoleEnum.member,
+      role: 'member',
       status: 'active'
     });
 
@@ -539,7 +539,7 @@ describe('accountDeletion service', () => {
     await MongoTeamMember.create({
       userId: memberUser._id,
       teamId: team._id,
-      role: TeamMemberRoleEnum.member,
+      role: 'member',
       status: 'active'
     });
 

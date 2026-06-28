@@ -60,7 +60,11 @@ export const TeamTmbItemSchema = ThidPartyAccountSchema.extend({
   balance: z.number().optional(),
   tmbId: z.string(),
   teamDomain: z.string().optional(),
-  role: z.enum(TeamMemberRoleEnum).optional(),
+  role: z.enum(TeamMemberRoleEnum).optional().meta({
+    deprecated: true,
+    example: TeamMemberRoleEnum.member,
+    description: '旧版团队成员角色字段，仅用于兼容历史 owner/member 数据'
+  }),
   status: z.enum(TeamMemberStatusEnum),
   notificationAccount: z.string().optional(),
   permission: z.instanceof(TeamPermission),

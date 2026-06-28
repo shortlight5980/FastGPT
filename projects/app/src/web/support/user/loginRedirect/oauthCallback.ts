@@ -23,6 +23,47 @@ export const claimOAuthCallbackByPath = (asPath: string) => {
   return claimOAuthCallbackRequest(buildOAuthCallbackRequestKey(asPath));
 };
 
+export type LoginProviderOAuthCallbackBranch =
+  | 'waiting'
+  | 'duplicate'
+  | 'accountCancellation'
+  | 'login';
+
+/**
+ * 判断登录 provider 页面当前是否可以消费 OAuth 回调，以及应进入哪个业务分支。
+ *
+ * loginStore 来自 zustand persist，未来 storage 如果变成异步 hydrate，
+ * 这里必须先等待 hydrate 完成；否则账号注销 OAuth 回调会在 authType 恢复前
+ * 被普通登录分支 claim 掉，导致一次性 callback 提前失效。
+ */
+export const getLoginProviderOAuthCallbackBranch = ({
+  hasProps,
+  initd,
+  loginStoreHydrated,
+  isOauthLogging,
+  authType
+}: {
+  hasProps: boolean;
+  initd: boolean;
+  loginStoreHydrated: boolean;
+  isOauthLogging: boolean;
+  authType?: 'login' | 'accountCancellation';
+}): LoginProviderOAuthCallbackBranch => {
+  if (!hasProps || !initd || !loginStoreHydrated) {
+    return 'waiting';
+  }
+
+  if (isOauthLogging) {
+    return 'duplicate';
+  }
+
+  if (authType === 'accountCancellation') {
+    return 'accountCancellation';
+  }
+
+  return 'login';
+};
+
 type AccountCancellationOAuthCallbackClaimResult =
   | {
       status: 'duplicate';
