@@ -29,6 +29,8 @@ export type LoginProviderOAuthCallbackBranch =
   | 'accountCancellation'
   | 'login';
 
+export type LoginProviderOAuthErrorBranch = 'waiting' | 'accountCancellation' | 'login';
+
 const hasOAuthCredentialProps = (props: Record<string, string>) => {
   return Boolean(props.code || props.token);
 };
@@ -91,6 +93,35 @@ export const getLoginProviderOAuthCallbackBranch = ({
 
   if (isOauthLogging) {
     return 'duplicate';
+  }
+
+  if (authType === 'accountCancellation') {
+    return 'accountCancellation';
+  }
+
+  return 'login';
+};
+
+/**
+ * 判断 OAuth provider 返回 error 时应该进入哪个业务分支。
+ *
+ * error 回调通常没有 code/token，不能复用普通 callback ready 判断；
+ * 这里仍然必须等待 loginStore hydrate 完成，否则账号注销 OAuth 失败会在
+ * authType 恢复前被当成普通登录失败处理并跳回登录页。
+ */
+export const getLoginProviderOAuthErrorBranch = ({
+  routerReady,
+  initd,
+  loginStoreHydrated,
+  authType
+}: {
+  routerReady: boolean;
+  initd: boolean;
+  loginStoreHydrated: boolean;
+  authType?: 'login' | 'accountCancellation';
+}): LoginProviderOAuthErrorBranch => {
+  if (!routerReady || !initd || !loginStoreHydrated) {
+    return 'waiting';
   }
 
   if (authType === 'accountCancellation') {

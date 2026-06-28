@@ -27,6 +27,7 @@ import { getOAuthProviderCallbackUrl } from '@/web/support/user/loginRedirect/ur
 import {
   claimOAuthCallbackByPath,
   getLoginProviderOAuthCallbackBranch,
+  getLoginProviderOAuthErrorBranch,
   handleAccountCancellationOAuthCallback,
   isLoginProviderOAuthCallbackReady
 } from '@/web/support/user/loginRedirect/oauthCallback';
@@ -177,16 +178,23 @@ const provider = () => {
 
   useEffect(() => {
     if (error) {
+      const errorBranch = getLoginProviderOAuthErrorBranch({
+        routerReady: router.isReady,
+        initd,
+        loginStoreHydrated,
+        authType: loginStore?.authType
+      });
+
+      if (errorBranch === 'waiting') return;
+
       toast({
         status: 'warning',
         title:
-          loginStore?.authType === 'accountCancellation'
+          errorBranch === 'accountCancellation'
             ? t('account_info:account_cancellation_verify_error')
             : t('common:support.user.login.Provider error')
       });
-      router.replace(
-        loginStore?.authType === 'accountCancellation' ? '/account/cancel' : errorRedirectPage
-      );
+      router.replace(errorBranch === 'accountCancellation' ? '/account/cancel' : errorRedirectPage);
       return;
     }
 

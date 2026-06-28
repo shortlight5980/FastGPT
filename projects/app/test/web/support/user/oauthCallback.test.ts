@@ -5,6 +5,7 @@ import {
   buildOAuthCallbackRequestKey,
   claimOAuthCallbackRequest,
   getLoginProviderOAuthCallbackBranch,
+  getLoginProviderOAuthErrorBranch,
   handleAccountCancellationOAuthCallback,
   isLoginProviderOAuthCallbackReady
 } from '../../../../src/web/support/user/loginRedirect/oauthCallback';
@@ -31,6 +32,35 @@ describe('OAuth callback dedupe', () => {
         authType: 'accountCancellation'
       })
     ).toBe('accountCancellation');
+  });
+
+  it('waits for loginStore hydration before routing oauth error callbacks', () => {
+    expect(
+      getLoginProviderOAuthErrorBranch({
+        routerReady: true,
+        initd: true,
+        loginStoreHydrated: false,
+        authType: undefined
+      })
+    ).toBe('waiting');
+
+    expect(
+      getLoginProviderOAuthErrorBranch({
+        routerReady: true,
+        initd: true,
+        loginStoreHydrated: true,
+        authType: 'accountCancellation'
+      })
+    ).toBe('accountCancellation');
+
+    expect(
+      getLoginProviderOAuthErrorBranch({
+        routerReady: true,
+        initd: true,
+        loginStoreHydrated: true,
+        authType: undefined
+      })
+    ).toBe('login');
   });
 
   it('waits until Next router has real OAuth callback params before claiming', () => {
