@@ -299,6 +299,45 @@ describe('accountDeletion service', () => {
     );
   });
 
+  it('submits concurrent account deletion requests idempotently', async () => {
+    const user = await MongoUser.create({
+      username: 'concurrent-delete@example.com',
+      contact: 'concurrent-delete@example.com',
+      password: '123456'
+    });
+    const ownerTeam = await MongoTeam.create({
+      name: 'Concurrent Owner Team',
+      ownerId: user._id
+    });
+    await MongoTeamMember.create({
+      userId: user._id,
+      teamId: ownerTeam._id,
+      role: TeamMemberRoleEnum.owner,
+      status: 'active'
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        submitAccountDeletion({
+          userId: String(user._id),
+          verifyMethod: AccountDeletionVerifyMethodEnum.code
+        })
+      )
+    );
+
+    expect(results).toEqual(
+      Array.from({ length: 5 }, () => ({
+        status: AccountDeletionStatusEnum.pending,
+        requestedAt: new Date('2026-06-01T00:00:00.000Z'),
+        scheduledDeleteAt: addDays(new Date('2026-06-01T00:00:00.000Z'), 15)
+      }))
+    );
+
+    const records = await MongoAccountDeletion.find({ userId: user._id }).lean();
+    expect(records).toHaveLength(1);
+    expect(records[0].ownerTeamIds.map(String)).toEqual([String(ownerTeam._id)]);
+  });
+
   it('cancels pending account deletion', async () => {
     const user = await MongoUser.create({
       username: 'cancel@example.com',

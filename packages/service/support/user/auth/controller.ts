@@ -4,6 +4,7 @@ import { i18nT } from '@fastgpt/global/common/i18n/utils';
 import { mongoSessionRun } from '../../../common/mongo/sessionRun';
 import { UserError } from '@fastgpt/global/common/error/utils';
 import { z } from 'zod';
+import { addMinutes } from 'date-fns';
 
 export const addAuthCode = async ({
   key,
@@ -18,6 +19,8 @@ export const addAuthCode = async ({
   type: `${UserAuthTypeEnum}`;
   expiredTime?: Date;
 }) => {
+  const resolvedExpiredTime = expiredTime ?? addMinutes(new Date(), 5);
+
   return MongoUserAuth.updateOne(
     {
       key,
@@ -26,7 +29,7 @@ export const addAuthCode = async ({
     {
       code,
       openid,
-      expiredTime
+      expiredTime: resolvedExpiredTime
     },
     {
       upsert: true

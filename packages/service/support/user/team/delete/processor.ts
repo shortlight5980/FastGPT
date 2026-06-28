@@ -23,6 +23,8 @@ import { getLogger, LogCategories } from '../../../../common/logger';
 import { MongoUser } from '../../schema';
 import { TeamMemberStatusEnum } from '@fastgpt/global/support/user/team/constant';
 import { delUserTeamSessions, replaceUserTeamSessions } from '../../session';
+import { MongoAccountDeletion } from '../../accountDeletion/schema';
+import { AccountDeletionStatusEnum } from '@fastgpt/global/support/user/accountDeletion/constants';
 
 const logger = getLogger(LogCategories.MODULE.USER.TEAM);
 
@@ -144,11 +146,46 @@ export const teamDeleteProcessor: Processor<TeamDeleteJobData> = async (job) => 
       teamId: string;
       team?: { _id: string } | null;
     }>;
+    const fallbackTeamIds = Array.from(
+      new Set(
+        fallbackMembers
+          .map((fallbackMember) => fallbackMember.team?._id)
+          .filter(Boolean)
+          .map(String)
+      )
+    );
+    const pendingOwnerTeamIdSet = new Set<string>();
+
+    if (fallbackTeamIds.length > 0) {
+      const pendingOwnerTeams = await MongoAccountDeletion.find(
+        {
+          ownerTeamIds: { $in: fallbackTeamIds },
+          status: {
+            $in: [AccountDeletionStatusEnum.pending, AccountDeletionStatusEnum.finalizing]
+          }
+        },
+        'ownerTeamIds'
+      ).lean();
+      for (const record of pendingOwnerTeams) {
+        for (const ownerTeamId of record.ownerTeamIds || []) {
+          const teamId = String(ownerTeamId);
+          if (fallbackTeamIds.includes(teamId)) {
+            pendingOwnerTeamIdSet.add(teamId);
+          }
+        }
+      }
+    }
 
     const fallbackMemberMap = new Map<string, (typeof fallbackMembers)[number]>();
     for (const fallbackMember of fallbackMembers) {
       const userId = String(fallbackMember.userId);
-      if (!fallbackMember.team || fallbackMemberMap.has(userId)) continue;
+      if (
+        !fallbackMember.team ||
+        fallbackMemberMap.has(userId) ||
+        pendingOwnerTeamIdSet.has(String(fallbackMember.team._id))
+      ) {
+        continue;
+      }
       fallbackMemberMap.set(userId, fallbackMember);
     }
 

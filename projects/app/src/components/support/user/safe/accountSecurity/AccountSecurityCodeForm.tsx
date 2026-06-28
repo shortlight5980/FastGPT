@@ -11,6 +11,7 @@ import type {
   AccountSecurityCodeHandlers,
   AccountSecurityVerifyCopy
 } from '@/components/support/user/safe/accountSecurity/types';
+import { getErrText } from '@fastgpt/global/common/error/utils';
 
 type FormType = {
   code: string;
@@ -81,7 +82,7 @@ const AccountSecurityCodeForm = <TSubmitResult,>({
       onError(err) {
         const fallback =
           verifyErrorText ?? t('account_info:account_security_verify_error', '验证失败');
-        onError?.(typeof err === 'string' ? err : fallback);
+        onError?.(getErrText(err, fallback));
       }
     }
   );
@@ -128,7 +129,7 @@ const AccountSecurityCodeForm = <TSubmitResult,>({
       onError(err) {
         const fallback =
           verifyErrorText ?? t('account_info:account_security_verify_error', '验证失败');
-        onError?.(typeof err === 'string' ? err : fallback);
+        onError?.(getErrText(err, fallback));
       }
     }
   );

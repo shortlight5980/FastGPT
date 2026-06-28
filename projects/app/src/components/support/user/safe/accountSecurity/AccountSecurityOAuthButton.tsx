@@ -8,6 +8,7 @@ import type {
   AccountSecurityOAuthHandlers,
   AccountSecurityVerifyCopy
 } from '@/components/support/user/safe/accountSecurity/types';
+import { getErrText } from '@fastgpt/global/common/error/utils';
 
 type AccountSecurityOAuthButtonProps = AccountSecurityOAuthHandlers &
   Pick<
@@ -66,7 +67,7 @@ const AccountSecurityOAuthButton = ({
       onError(err) {
         const fallback =
           oauthErrorText ?? t('account_info:account_security_oauth_error', '第三方验证失败');
-        onError?.(typeof err === 'string' ? err : fallback);
+        onError?.(getErrText(err, fallback));
       }
     }
   );

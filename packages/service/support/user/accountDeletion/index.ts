@@ -1,5 +1,4 @@
 import { addDays } from 'date-fns';
-import { mongoSessionRun } from '../../../common/mongo/sessionRun';
 import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
 import { UserStatusEnum } from '@fastgpt/global/support/user/constant';
 import {
@@ -33,6 +32,16 @@ import {
   consumeAccountSecurityOAuthState,
   createAccountSecurityOAuthState
 } from '../accountSecurity';
+
+const pendingAccountDeletionStatuses = [
+  AccountDeletionStatusEnum.pending,
+  AccountDeletionStatusEnum.finalizing
+] as const;
+const pendingAccountDeletionStatusFilter = {
+  $in: pendingAccountDeletionStatuses
+};
+const isPendingAccountDeletionStatus = (status?: string) =>
+  pendingAccountDeletionStatuses.some((pendingStatus) => pendingStatus === status);
 
 export const getAccountDeletionAuthKey = (userId: string) => `accountDeletion:${userId}`;
 
@@ -78,9 +87,7 @@ export const getPendingAccountDeletionByUserId = (userId?: string) => {
   if (!userId) return null;
   return MongoAccountDeletion.findOne({
     userId,
-    status: {
-      $in: [AccountDeletionStatusEnum.pending, AccountDeletionStatusEnum.finalizing]
-    }
+    status: pendingAccountDeletionStatusFilter
   }).lean();
 };
 
@@ -88,9 +95,7 @@ export const getPendingAccountDeletionByTeamId = (teamId?: string) => {
   if (!teamId) return null;
   return MongoAccountDeletion.findOne({
     ownerTeamIds: teamId,
-    status: {
-      $in: [AccountDeletionStatusEnum.pending, AccountDeletionStatusEnum.finalizing]
-    }
+    status: pendingAccountDeletionStatusFilter
   }).lean();
 };
 
@@ -343,63 +348,65 @@ export const submitAccountDeletion = async ({
   verifyMethod: AccountDeletionVerifyMethodType;
   verifyProvider?: string;
 }) => {
-  const pending = await mongoSessionRun(async (session) => {
-    const user = await MongoUser.findById(userId, undefined, { session });
-    if (!user) {
-      return Promise.reject(UserErrEnum.notUser);
-    }
-    if (user.username === 'root') {
-      return Promise.reject('Root account can not be deleted');
-    }
-    if (user.status === UserStatusEnum.forbidden) {
-      return Promise.reject('Invalid account');
-    }
+  const user = await MongoUser.findById(userId);
+  if (!user) {
+    return Promise.reject(UserErrEnum.notUser);
+  }
+  if (user.username === 'root') {
+    return Promise.reject('Root account can not be deleted');
+  }
+  if (user.status === UserStatusEnum.forbidden) {
+    return Promise.reject('Invalid account');
+  }
 
-    const existed = await MongoAccountDeletion.findOne(
-      {
-        userId,
-        status: {
-          $in: [AccountDeletionStatusEnum.pending, AccountDeletionStatusEnum.finalizing]
-        }
-      },
-      undefined,
-      { session }
-    );
-    if (existed) {
-      return formatAccountDeletionPendingResponse(existed);
-    }
-
-    const eligibility = getAccountCancellationEligibility({
-      username: user.username
-    });
-    assertAccountCancellationMethod(eligibility, {
-      verifyMode: verifyMethod as AccountDeletionVerifyModeEnum,
-      provider: verifyProvider as `${OAuthEnum}` | undefined
-    });
-
-    const ownerTeams = await MongoTeam.find({ ownerId: userId }, '_id', { session }).lean();
-    const requestedAt = new Date();
-    const scheduledDeleteAt = addDays(requestedAt, accountDeletionWaitDays);
-    const [record] = await MongoAccountDeletion.create(
-      [
-        {
-          userId,
-          usernameSnapshot: user.username,
-          contactSnapshot: user.contact,
-          status: AccountDeletionStatusEnum.pending,
-          verifyMethod,
-          verifyProvider,
-          requestedAt,
-          scheduledDeleteAt,
-          ownerTeamIds: ownerTeams.map((team) => team._id),
-          updateTime: requestedAt
-        }
-      ],
-      { session }
-    );
-
-    return formatAccountDeletionPendingResponse(record);
+  const existed = await MongoAccountDeletion.findOne({
+    userId,
+    status: pendingAccountDeletionStatusFilter
   });
+  if (existed) {
+    await delUserAllSession(userId);
+    return formatAccountDeletionPendingResponse(existed);
+  }
+
+  const eligibility = getAccountCancellationEligibility({
+    username: user.username
+  });
+  assertAccountCancellationMethod(eligibility, {
+    verifyMode: verifyMethod as AccountDeletionVerifyModeEnum,
+    provider: verifyProvider as `${OAuthEnum}` | undefined
+  });
+
+  const ownerTeams = await MongoTeam.find({ ownerId: userId }, '_id').lean();
+  const requestedAt = new Date();
+  const scheduledDeleteAt = addDays(requestedAt, accountDeletionWaitDays);
+  // userId 有唯一索引，用 $setOnInsert 原子创建，避免并发提交在 create 阶段抛 E11000。
+  const record = await MongoAccountDeletion.findOneAndUpdate(
+    { userId },
+    {
+      $setOnInsert: {
+        userId,
+        usernameSnapshot: user.username,
+        contactSnapshot: user.contact,
+        status: AccountDeletionStatusEnum.pending,
+        verifyMethod,
+        verifyProvider,
+        requestedAt,
+        scheduledDeleteAt,
+        ownerTeamIds: ownerTeams.map((team) => team._id),
+        updateTime: requestedAt
+      }
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true
+    }
+  );
+  if (!record || !isPendingAccountDeletionStatus(record.status)) {
+    return Promise.reject('Invalid account deletion status');
+  }
+
+  const pending = formatAccountDeletionPendingResponse(record);
 
   await delUserAllSession(userId);
 

@@ -16,6 +16,45 @@ describe('support/user/auth/controller', () => {
   });
 
   describe('authCode', () => {
+    it('refreshes the default expiry when resending a code for the same key', async () => {
+      const key = 'accountDeletion:resend-user';
+      const oldExpiredTime = new Date(Date.now() - 60_000);
+
+      await addAuthCode({
+        key,
+        type: UserAuthTypeEnum.accountDeletion,
+        code: '111111',
+        expiredTime: oldExpiredTime
+      });
+
+      const beforeRefresh = Date.now();
+      await addAuthCode({
+        key,
+        type: UserAuthTypeEnum.accountDeletion,
+        code: '222222'
+      });
+      const afterRefresh = Date.now();
+
+      const record = await MongoUserAuth.findOne({
+        key,
+        type: UserAuthTypeEnum.accountDeletion
+      }).lean();
+
+      expect(record).toMatchObject({
+        code: '222222'
+      });
+      expect(record?.expiredTime.getTime()).toBeGreaterThanOrEqual(beforeRefresh + 5 * 60_000);
+      expect(record?.expiredTime.getTime()).toBeLessThanOrEqual(afterRefresh + 5 * 60_000);
+
+      await expect(
+        authCode({
+          key,
+          type: UserAuthTypeEnum.accountDeletion,
+          code: '222222'
+        })
+      ).resolves.toBe('SUCCESS');
+    });
+
     it('matches auth codes by exact value and consumes the record', async () => {
       await addAuthCode({
         key: 'accountDeletion:user1',

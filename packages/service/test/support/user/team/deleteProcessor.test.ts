@@ -63,6 +63,11 @@ vi.mock('../../../../support/user/session', () => ({
   delUserTeamSessions: vi.fn(),
   replaceUserTeamSessions: vi.fn()
 }));
+vi.mock('../../../../support/user/accountDeletion/schema', () => ({
+  MongoAccountDeletion: {
+    find: vi.fn()
+  }
+}));
 vi.mock('../../../../support/user/team/teamMemberSchema', () => ({
   MongoTeamMember: {
     find: vi.fn(),
@@ -120,6 +125,7 @@ const { MongoMemberGroupModel } =
 const { delUserTeamSessions, replaceUserTeamSessions } =
   await import('../../../../support/user/session');
 const { MongoUser } = await import('../../../../support/user/schema');
+const { MongoAccountDeletion } = await import('../../../../support/user/accountDeletion/schema');
 
 describe('teamDeleteProcessor', () => {
   beforeEach(() => {
@@ -135,7 +141,7 @@ describe('teamDeleteProcessor', () => {
     vi.mocked(MongoEvaluation.find).mockReturnValue({
       lean: vi.fn().mockResolvedValue([{ _id: 'eval-1' }, { _id: 'eval-2' }])
     } as any);
-    vi.mocked(MongoTeamMember.find).mockImplementation((query: any) => {
+    vi.mocked(MongoTeamMember.find).mockImplementation(((query: any) => {
       if (query?.teamId && !query?.userId) {
         return Promise.resolve([]);
       }
@@ -144,8 +150,11 @@ describe('teamDeleteProcessor', () => {
         sort: vi.fn().mockReturnThis(),
         lean: vi.fn().mockResolvedValue([])
       } as any;
-    });
+    }) as any);
     vi.mocked(MongoMemberGroupModel.find).mockResolvedValue([]);
+    vi.mocked(MongoAccountDeletion.find).mockReturnValue({
+      lean: vi.fn().mockResolvedValue([])
+    } as any);
     vi.mocked(MongoEvaluation.deleteMany).mockResolvedValue({ acknowledged: true } as any);
     vi.mocked(MongoEvalItem.deleteMany).mockResolvedValue({ acknowledged: true } as any);
     vi.mocked(MongoUser.updateOne).mockResolvedValue({ acknowledged: true } as any);
@@ -211,6 +220,66 @@ describe('teamDeleteProcessor', () => {
         lastLoginTmbId: 'fallback-tmb-1'
       }
     );
+    expect(delUserTeamSessions).not.toHaveBeenCalled();
+  });
+
+  it('skips fallback teams owned by pending account-deletion users', async () => {
+    vi.mocked(MongoTeamMember.find)
+      .mockResolvedValueOnce([
+        {
+          _id: 'deleted-tmb-3',
+          userId: 'user-3',
+          teamId: 'team-1'
+        }
+      ] as any)
+      .mockReturnValueOnce({
+        populate: vi.fn().mockReturnThis(),
+        sort: vi.fn().mockReturnThis(),
+        lean: vi.fn().mockResolvedValue([
+          {
+            _id: 'pending-fallback-tmb',
+            userId: 'user-3',
+            teamId: 'team-2',
+            team: { _id: 'team-2' }
+          },
+          {
+            _id: 'healthy-fallback-tmb',
+            userId: 'user-3',
+            teamId: 'team-3',
+            team: { _id: 'team-3' }
+          }
+        ])
+      } as any);
+    vi.mocked(MongoAccountDeletion.find).mockReturnValue({
+      lean: vi.fn().mockResolvedValue([
+        {
+          ownerTeamIds: ['team-2']
+        }
+      ])
+    } as any);
+
+    await teamDeleteProcessor({
+      data: {
+        teamId: 'team-1'
+      }
+    } as any);
+
+    expect(MongoAccountDeletion.find).toHaveBeenCalledWith(
+      {
+        ownerTeamIds: { $in: ['team-2', 'team-3'] },
+        status: {
+          $in: ['pending', 'finalizing']
+        }
+      },
+      'ownerTeamIds'
+    );
+    expect(replaceUserTeamSessions).toHaveBeenCalledWith({
+      userId: 'user-3',
+      fromTeamId: 'team-1',
+      fromTmbId: 'deleted-tmb-3',
+      toTeamId: 'team-3',
+      toTmbId: 'healthy-fallback-tmb'
+    });
     expect(delUserTeamSessions).not.toHaveBeenCalled();
   });
 
