@@ -23,6 +23,7 @@ import { addOutLinkUsage } from '@fastgpt/service/support/outLink/tools';
 import { getRunningUserInfoByTmbId } from '@fastgpt/service/support/user/team/utils';
 import { getWorkflowFileLimits } from '@fastgpt/service/core/workflow/utils/fileLimits';
 import { mongoSessionRun } from '@fastgpt/service/common/mongo/sessionRun';
+import { assertAccountUsable } from '@fastgpt/service/support/user/account/cancellation/guard';
 
 vi.mock('@fastgpt/service/core/app/schema', () => ({
   MongoApp: { findById: vi.fn() }
@@ -64,6 +65,9 @@ vi.mock('@fastgpt/service/core/workflow/utils/fileLimits', async (importOriginal
 }));
 vi.mock('@fastgpt/service/support/user/team/utils', () => ({
   getRunningUserInfoByTmbId: vi.fn()
+}));
+vi.mock('@fastgpt/service/support/user/account/cancellation/guard', () => ({
+  assertAccountUsable: vi.fn()
 }));
 vi.mock('@fastgpt/service/support/outLink/runtime/auth', () => ({
   authOutLinkLimit: vi.fn()
@@ -154,6 +158,7 @@ describe('runOutlinkRuntime', () => {
       teamId: 'team-id',
       tmbId: 'tmb-id'
     } as any);
+    vi.mocked(assertAccountUsable).mockResolvedValue(undefined);
     vi.mocked(preChatRound).mockResolvedValue({
       chatId: 'prepared-chat-id',
       responseChatItemId: message.messageId,

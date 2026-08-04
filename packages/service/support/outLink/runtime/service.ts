@@ -49,6 +49,7 @@ import { getLogger, LogCategories } from '../../../common/logger';
 import { mongoSessionRun } from '../../../common/mongo/sessionRun';
 import { getNanoid } from '@fastgpt/global/common/string/tools';
 import { authOutLinkLimit } from './auth';
+import { assertAccountUsable } from '../../user/account/cancellation/guard';
 import type {
   OutlinkMessageHandleResult,
   OutlinkProviderMessageHandler,
@@ -254,6 +255,11 @@ export async function runOutlinkRuntime<T extends OutlinkAppType>({
   message: { chatId, query, messageId, chatUserId, resolveQuery },
   respond
 }: RunOutlinkRuntimeProps<T>): Promise<OutlinkMessageHandleResult> {
+  await assertAccountUsable({
+    teamId: String(outLinkConfig.teamId),
+    tmbId: String(outLinkConfig.tmbId)
+  });
+
   const roundState = {
     preparedRound: undefined as PreChatRoundResult | undefined,
     sourceId: '',

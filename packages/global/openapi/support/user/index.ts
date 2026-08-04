@@ -8,5 +8,6 @@ export const UserPath: OpenAPIPath = {
   ...UserAuditPath,
   ...UserInformPath,
   ...UserAccountPath,
-  ...TeamPath
+  ...TeamPath,
+  ...UserAuditPath
 };
