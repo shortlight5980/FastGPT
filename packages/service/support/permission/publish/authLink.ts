@@ -6,7 +6,7 @@ import { OwnerPermissionVal } from '@fastgpt/global/support/permission/constant'
 import { authAppByTmbId } from '../app/auth';
 import { type AuthModeType, type AuthResponseType } from '../type';
 import { parseHeaderCert } from '../auth/common';
-import { assertAccountUsable } from '../../user/account/cancellation/guard';
+import { assertOutLinkTeamUsable } from '../../outLink/guard';
 import type { PublishChannelEnum } from '@fastgpt/global/support/outLink/constant';
 import type { z } from 'zod';
 import { getLogger, LogCategories } from '../../../common/logger';
@@ -74,7 +74,7 @@ export async function authOutLinkValid<T extends OutlinkAppType = any>({
     return Promise.reject(OutLinkErrEnum.linkUnInvalid);
   }
 
-  await assertAccountUsable({
+  await assertOutLinkTeamUsable({
     teamId: String(outLinkConfig.teamId),
     tmbId: String(outLinkConfig.tmbId)
   });
