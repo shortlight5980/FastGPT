@@ -49,7 +49,7 @@ import { getLogger, LogCategories } from '../../../common/logger';
 import { mongoSessionRun } from '../../../common/mongo/sessionRun';
 import { getNanoid } from '@fastgpt/global/common/string/tools';
 import { authOutLinkLimit } from './auth';
-import { assertOutLinkTeamUsable } from '../guard';
+import { assertCancellation } from '../../user/account/cancellation/guard';
 import type {
   OutlinkMessageHandleResult,
   OutlinkProviderMessageHandler,
@@ -255,7 +255,8 @@ export async function runOutlinkRuntime<T extends OutlinkAppType>({
   message: { chatId, query, messageId, chatUserId, resolveQuery },
   respond
 }: RunOutlinkRuntimeProps<T>): Promise<OutlinkMessageHandleResult> {
-  await assertOutLinkTeamUsable({
+  // 分享链接没有用户 Session，使用发布链接绑定的 tmb/team 校验账号可用性
+  await assertCancellation({
     teamId: String(outLinkConfig.teamId),
     tmbId: String(outLinkConfig.tmbId)
   });
