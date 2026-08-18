@@ -11,7 +11,6 @@ import { getAccountCancellationAuthKey } from './formatter';
 import { getActiveAccountCancellationByUserId } from './read';
 import { MongoAccountCancellation } from './schema';
 import { MongoTeam } from '../../team/teamSchema';
-import { MongoTeamMember } from '../../team/teamMemberSchema';
 
 const accountCancellationLockTtlMs = 10 * 60 * 1000;
 const accountCancellationTeamLockTtlMs = 10 * 60 * 1000;
@@ -22,29 +21,26 @@ const accountCancellationCache = new AccountCancellationCache({
 
 export type AccountCancellationCacheTargets = {
   teamIds: string[];
-  tmbIds: string[];
+  userIds: string[];
 };
 
-/** 读取用户当前拥有的团队和成员关系，供注销状态 Cache 做生命周期刷新。 */
+/** 读取用户当前拥有的团队和用户身份，供注销状态 Cache 做生命周期刷新。 */
 export const getAccountCancellationCacheTargets = async (
   userId: string
 ): Promise<AccountCancellationCacheTargets> => {
-  const [teams, members] = await Promise.all([
-    MongoTeam.find({ ownerId: userId }, { _id: 1 }).lean(),
-    MongoTeamMember.find({ userId }, { _id: 1 }).lean()
-  ]);
+  const teams = await MongoTeam.find({ ownerId: userId }, { _id: 1 }).lean();
 
   return {
     teamIds: teams.map((team) => String(team._id)),
-    tmbIds: members.map((member) => String(member._id))
+    userIds: [String(userId)]
   };
 };
 
 /**
- * 刷新 API Key 注销状态 Cache。
+ * 刷新鉴权注销状态 Cache。
  *
- * active 时写入正向 marker；注销取消或完成后删除 marker。Redis 只是加速层，刷新失败时
- * API Key 鉴权仍会在 Cache miss 时回源 Mongo，因此不能因为缓存故障放行注销中的账号。
+ * active 时写入 1，取消注销或最终清理时写入 0。Redis 只是加速层，刷新失败时鉴权仍会
+ * 在 Cache miss 时回源 Mongo，因此不能因为缓存故障放行注销中的账号。
  */
 export const syncAccountCancellationCache = async ({
   userId,
@@ -58,20 +54,16 @@ export const syncAccountCancellationCache = async ({
   const resolvedTargets = targets ?? (await getAccountCancellationCacheTargets(userId));
 
   await Promise.all([
-    active
-      ? accountCancellationCache.setMany({
-          scope: 'team',
-          ids: resolvedTargets.teamIds,
-          active: true
-        })
-      : accountCancellationCache.clearMany({ scope: 'team', ids: resolvedTargets.teamIds }),
-    active
-      ? accountCancellationCache.setMany({
-          scope: 'member',
-          ids: resolvedTargets.tmbIds,
-          active: true
-        })
-      : accountCancellationCache.clearMany({ scope: 'member', ids: resolvedTargets.tmbIds })
+    accountCancellationCache.setMany({
+      scope: 'team',
+      ids: resolvedTargets.teamIds,
+      active
+    }),
+    accountCancellationCache.setMany({
+      scope: 'user',
+      ids: resolvedTargets.userIds,
+      active
+    })
   ]);
 
   return resolvedTargets;

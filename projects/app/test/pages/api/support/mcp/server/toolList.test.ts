@@ -16,7 +16,10 @@ import { getAppLatestVersion } from '@fastgpt/service/core/app/version/controlle
 import { dispatchWorkFlow } from '@fastgpt/service/core/workflow/dispatch';
 import { failChatRound, finalizeChatRound } from '@fastgpt/service/core/chat/saveChat';
 import { preChatRound } from '@fastgpt/service/core/chat/utils/prepare';
-import { getRunningUserInfoByTmbId } from '@fastgpt/service/support/user/team/utils';
+import {
+  getRunningUserInfoByTmbId,
+  getUserIdByTmbId
+} from '@fastgpt/service/support/user/team/utils';
 import { assertCancellation } from '@fastgpt/service/support/user/account/cancellation/guard';
 import { AccountCancellationStatus } from '@fastgpt/global/support/user/account/cancellation/constants';
 
@@ -58,7 +61,8 @@ vi.mock('@fastgpt/service/support/permission/app/auth', () => ({
 }));
 
 vi.mock('@fastgpt/service/support/user/team/utils', () => ({
-  getRunningUserInfoByTmbId: vi.fn()
+  getRunningUserInfoByTmbId: vi.fn(),
+  getUserIdByTmbId: vi.fn()
 }));
 
 vi.mock('@fastgpt/service/support/user/account/cancellation/guard', () => ({
@@ -85,6 +89,7 @@ vi.mock('@fastgpt/service/core/chat/utils/prepare', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(assertCancellation).mockResolvedValue(undefined);
+  vi.mocked(getUserIdByTmbId).mockResolvedValue('user-id');
 });
 
 describe('toolList', () => {
@@ -206,7 +211,7 @@ describe('callMcpServerTool', () => {
     ).rejects.toThrow('MCP team member is no longer active');
     expect(assertCancellation).toHaveBeenCalledWith({
       teamId: 'team-id',
-      tmbId: 'tmb-id'
+      userId: 'user-id'
     });
   });
 
@@ -224,7 +229,7 @@ describe('callMcpServerTool', () => {
     ).rejects.toMatchObject({ message: expect.any(String) });
     expect(assertCancellation).toHaveBeenCalledWith({
       teamId: 'team-id',
-      tmbId: 'tmb-id'
+      userId: 'user-id'
     });
   });
 

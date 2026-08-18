@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LeaseCache, RedisLeaseUnavailableError } from '@fastgpt/dal/redis/caches';
+import {
+  AccountCancellationCache,
+  LeaseCache,
+  RedisLeaseUnavailableError
+} from '@fastgpt/dal/redis/caches';
 
 import {
   assertAccountCancellationMethod,
+  getAccountCancellationCacheTargets,
+  syncAccountCancellationCache,
   withAccountCancellationTeamLock,
   withAccountCancellationUserLock
 } from '@fastgpt/service/support/user/account/cancellation/service';
 import { accountCancellationAllowedMethods } from '@fastgpt/global/support/user/account/cancellation/constants';
+import { MongoTeam } from '@fastgpt/service/support/user/team/teamSchema';
 
 describe('assertAccountCancellationMethod', () => {
   it.each(accountCancellationAllowedMethods)('accepts %s', (method) => {
@@ -66,5 +73,27 @@ describe('account cancellation leases', () => {
     withLease.mockRejectedValue(error);
 
     await expect(withAccountCancellationUserLock('user-1', vi.fn())).rejects.toBe(error);
+  });
+});
+
+describe('account cancellation cache synchronization', () => {
+  it('collects team/user targets and updates team and user keys', async () => {
+    vi.spyOn(MongoTeam, 'find').mockReturnValue({
+      lean: vi.fn().mockResolvedValue([{ _id: 'team-1' }])
+    } as any);
+    const set = vi.spyOn(AccountCancellationCache.prototype, 'set').mockResolvedValue(undefined);
+
+    await expect(getAccountCancellationCacheTargets('user-1')).resolves.toEqual({
+      teamIds: ['team-1'],
+      userIds: ['user-1']
+    });
+    await syncAccountCancellationCache({
+      userId: 'user-1',
+      active: true,
+      targets: { teamIds: ['team-1'], userIds: ['user-1'] }
+    });
+
+    expect(set).toHaveBeenCalledWith('team', 'team-1', true);
+    expect(set).toHaveBeenCalledWith('user', 'user-1', true);
   });
 });

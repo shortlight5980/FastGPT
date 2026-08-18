@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NodeHttpResponse } from '@fastgpt/service/types/http';
 import { serviceEnv } from '@fastgpt/service/env';
 import { UserErrEnum } from '@fastgpt/global/common/error/code/user';
 
 const mocks = vi.hoisted(() => ({
-  authUserSession: vi.fn()
+  authUserSession: vi.fn(),
+  assertCancellation: vi.fn()
 }));
 
 const { clearCookie, setCookie } = await vi.importActual<
@@ -17,7 +18,6 @@ describe('token auth cancellation access', () => {
     teamId: 'team-1',
     tmbId: 'tmb-1',
     isRoot: false,
-    isCancelling: true,
     createdAt: 1000
   };
 
@@ -27,14 +27,23 @@ describe('token auth cancellation access', () => {
       ...(await importOriginal<typeof import('@fastgpt/service/support/user/session')>()),
       authUserSession: mocks.authUserSession
     }));
+    vi.doMock('@fastgpt/service/support/user/account/cancellation/guard', () => ({
+      assertCancellation: mocks.assertCancellation
+    }));
     const authModule = await vi.importActual<
       typeof import('@fastgpt/service/support/permission/auth/common')
     >('@fastgpt/service/support/permission/auth/common');
     return authModule.parseHeaderCert;
   };
 
+  beforeEach(() => {
+    mocks.authUserSession.mockReset();
+    mocks.assertCancellation.mockReset();
+  });
+
   it('rejects a cancelling Session with a business error by default', async () => {
     mocks.authUserSession.mockResolvedValue(session);
+    mocks.assertCancellation.mockRejectedValue(UserErrEnum.accountCancellationPending);
     const parseHeaderCert = await loadParseHeaderCert();
 
     await expect(
@@ -43,10 +52,15 @@ describe('token auth cancellation access', () => {
         authToken: true
       })
     ).rejects.toBe(UserErrEnum.accountCancellationPending);
+    expect(mocks.assertCancellation).toHaveBeenCalledWith({
+      teamId: 'team-1',
+      userId: 'user-1'
+    });
   });
 
-  it('allows a cancelling Session only when the caller opts in', async () => {
+  it('skips cancellation validation when the caller opts in', async () => {
     mocks.authUserSession.mockResolvedValue(session);
+    mocks.assertCancellation.mockRejectedValue(UserErrEnum.accountCancellationPending);
     const parseHeaderCert = await loadParseHeaderCert();
 
     await expect(
@@ -61,6 +75,7 @@ describe('token auth cancellation access', () => {
       tmbId: 'tmb-1',
       sessionId: 'user-1:token-1'
     });
+    expect(mocks.assertCancellation).not.toHaveBeenCalled();
   });
 });
 

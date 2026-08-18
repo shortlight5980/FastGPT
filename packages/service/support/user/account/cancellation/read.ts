@@ -1,10 +1,8 @@
-import {
-  AccountCancellationStatus,
-  accountCancellationActiveStatuses
-} from '@fastgpt/global/support/user/account/cancellation/constants';
+import { accountCancellationActiveStatuses } from '@fastgpt/global/support/user/account/cancellation/constants';
+import { accountCancellationCache } from '@fastgpt/dal/redis/caches';
 import { Types } from 'mongoose';
 import { MongoTeam } from '../../team/teamSchema';
-import { MongoAccountCancellation, type AccountCancellationSchemaType } from './schema';
+import { MongoAccountCancellation } from './schema';
 
 export const accountCancellationActiveStatusFilter = {
   $in: accountCancellationActiveStatuses
@@ -15,72 +13,70 @@ export const getAccountCancellationByUserId = (userId?: string) => {
   return MongoAccountCancellation.findOne({ userId }).lean();
 };
 
-export const getActiveAccountCancellationByUserId = (userId?: string) => {
+/** 读取用户 active 注销记录；inactive Cache 命中时直接返回，active 命中仍需回源获取完整记录。 */
+export const getActiveAccountCancellationByUserId = async (userId?: string) => {
   if (!userId) return null;
-  return MongoAccountCancellation.findOne({
+
+  const cachedCancellation = await accountCancellationCache.get('user', userId);
+  if (cachedCancellation === false) return null;
+
+  const cancellation = await MongoAccountCancellation.findOne({
     userId,
     status: accountCancellationActiveStatusFilter
   }).lean();
-};
 
-/** 一次读取当前成员本人和当前团队 owner 的 active 注销记录，供中心鉴权复用。 */
-export const getActiveAccountCancellationsByUserIds = async ({
-  userId,
-  ownerId
-}: {
-  userId: string;
-  ownerId?: string;
-}) => {
-  const userIds = Array.from(new Set([userId, ownerId].filter(Boolean)));
-  return MongoAccountCancellation.find({
-    userId: { $in: userIds },
-    status: accountCancellationActiveStatusFilter
-  }).lean();
+  if (cachedCancellation === undefined || !cancellation) {
+    await accountCancellationCache.set('user', userId, !!cancellation);
+  }
+
+  return cancellation;
 };
 
 /**
  * 通过团队当前 owner 动态关联注销记录，生命周期集合不保存 ownerTeamIds 快照。
+ * inactive Cache 命中时直接返回，active 命中仍需回源获取完整记录。
  */
 export const getActiveAccountCancellationByTeamId = async (teamId?: string) => {
   if (!teamId || !Types.ObjectId.isValid(teamId)) return null;
-  const team = await MongoTeam.findById(teamId, { ownerId: 1 }).lean();
-  if (!team?.ownerId) return null;
 
-  return MongoAccountCancellation.findOne({
+  const cachedCancellation = await accountCancellationCache.get('team', teamId);
+  if (cachedCancellation === false) return null;
+
+  const team = await MongoTeam.findById(teamId, { ownerId: 1 }).lean();
+  if (!team?.ownerId) {
+    await accountCancellationCache.set('team', teamId, false);
+    return null;
+  }
+
+  const cancellation = await MongoAccountCancellation.findOne({
     userId: team.ownerId,
     status: accountCancellationActiveStatusFilter
   }).lean();
+
+  if (cachedCancellation === undefined || !cancellation) {
+    await accountCancellationCache.set('team', teamId, !!cancellation);
+  }
+
+  return cancellation;
 };
 
-/**
- * 批量读取已查询团队 owner 的注销状态，避免 fallback 为了注销检查重复读取团队。
- * knownCancellations 用于复用调用方已经读取的 owner 注销记录。
- */
+/** 批量读取已查询团队 owner 的注销状态，避免 fallback 为了注销检查重复读取团队。 */
 export const getActiveAccountCancellationsByTeams = async (
-  teams: { _id: unknown; ownerId?: unknown }[],
-  knownCancellations: Pick<
-    AccountCancellationSchemaType,
-    'userId' | 'status' | 'requestedAt'
-  >[] = []
+  teams: { _id: unknown; ownerId?: unknown }[]
 ) => {
   const teamsWithOwners = teams.filter((team) => team.ownerId);
   const ownerIds = Array.from(new Set(teamsWithOwners.map((team) => String(team.ownerId))));
-  const knownByOwnerId = new Map(
-    knownCancellations.map((record) => [String(record.userId), record])
-  );
-  const ownerIdsToQuery = ownerIds.filter((ownerId) => !knownByOwnerId.has(ownerId));
 
   const records =
-    ownerIdsToQuery.length > 0
+    ownerIds.length > 0
       ? await MongoAccountCancellation.find({
-          userId: { $in: ownerIdsToQuery },
+          userId: { $in: ownerIds },
           status: accountCancellationActiveStatusFilter
         }).lean()
       : [];
-  const recordsByOwnerId = new Map([
-    ...knownByOwnerId,
-    ...records.map((record) => [String(record.userId), record] as const)
-  ]);
+  const recordsByOwnerId = new Map(
+    records.map((record) => [String(record.userId), record] as const)
+  );
 
   return teamsWithOwners.flatMap((team) => {
     const record = recordsByOwnerId.get(String(team.ownerId));
@@ -100,6 +96,3 @@ export const getActiveAccountCancellationsByTeamIds = async (teamIds: string[]) 
 
   return getActiveAccountCancellationsByTeams(teams);
 };
-
-export const isAccountCancellationActiveStatus = (status?: string) =>
-  status === AccountCancellationStatus.pending || status === AccountCancellationStatus.finalizing;

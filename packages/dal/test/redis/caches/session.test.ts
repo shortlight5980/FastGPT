@@ -16,8 +16,7 @@ describe('SessionCache', () => {
     deleteMany: vi.fn(),
     getHashAll: vi.fn(),
     iterateByPrefix: vi.fn(),
-    setHashWithTtl: vi.fn(),
-    evalScript: vi.fn()
+    setHashWithTtl: vi.fn()
   };
 
   beforeEach(() => {
@@ -34,10 +33,9 @@ describe('SessionCache', () => {
     });
     redis.iterateByPrefix.mockReturnValue(createKeyBatches([]));
     redis.setHashWithTtl.mockResolvedValue(undefined);
-    redis.evalScript.mockResolvedValue(1);
   });
 
-  it('decodes a legacy session hash and defaults isCancelling to false', async () => {
+  it('decodes a legacy session hash', async () => {
     const cache = new SessionCache({ redis: redis as any, logger });
 
     await expect(cache.get('user-1:token-1')).resolves.toEqual({
@@ -45,25 +43,10 @@ describe('SessionCache', () => {
       teamId: 'team-1',
       tmbId: 'tmb-1',
       isRoot: false,
-      isCancelling: false,
       createdAt: 1000,
       ip: '127.0.0.1'
     });
     expect(redis.getHashAll).toHaveBeenCalledWith('session:user-1:token-1');
-  });
-
-  it('decodes the cancellation flag from a current session hash', async () => {
-    redis.getHashAll.mockResolvedValue({
-      userId: 'user-1',
-      teamId: 'team-1',
-      tmbId: 'tmb-1',
-      isRoot: '0',
-      isCancelling: '1',
-      createdAt: '1000'
-    });
-    const cache = new SessionCache({ redis: redis as any, logger });
-
-    await expect(cache.get('user-1:token-1')).resolves.toMatchObject({ isCancelling: true });
   });
 
   it('treats an empty hash as a session miss without deletion', async () => {
@@ -135,7 +118,6 @@ describe('SessionCache', () => {
         teamId: 'team-1',
         tmbId: 'tmb-1',
         isRoot: '1',
-        isCancelling: '0',
         createdAt: '2000'
       },
       ttlSeconds: SESSION_TTL_SECONDS
@@ -164,36 +146,11 @@ describe('SessionCache', () => {
         teamId: 'team-1',
         tmbId: 'tmb-1',
         isRoot: '0',
-        isCancelling: '0',
         createdAt: '2000',
         ip: '192.0.2.10'
       },
       ttlSeconds: SESSION_TTL_SECONDS
     });
-  });
-
-  it('updates only the cancellation flag so the existing TTL is preserved', async () => {
-    const cache = new SessionCache({ redis: redis as any, logger });
-
-    await cache.updateCancellation({
-      sessionId: 'user-1:token-1',
-      isCancelling: false
-    });
-
-    expect(redis.evalScript).toHaveBeenCalledWith({
-      script: expect.stringContaining('redis.call("exists", KEYS[1])'),
-      keys: ['session:user-1:token-1'],
-      args: ['isCancelling', '0']
-    });
-  });
-
-  it('does not recreate a Session that was deleted before cancellation refresh', async () => {
-    redis.evalScript.mockResolvedValue(0);
-    const cache = new SessionCache({ redis: redis as any, logger });
-
-    await expect(
-      cache.updateCancellation({ sessionId: 'user-1:expired', isCancelling: false })
-    ).resolves.toBe(false);
   });
 
   it('rejects invalid session data before touching Redis', async () => {
@@ -264,7 +221,6 @@ describe('SessionCache', () => {
           teamId: 'team-1',
           tmbId: 'tmb-1',
           isRoot: false,
-          isCancelling: false,
           createdAt: 1000
         }
       },
@@ -275,7 +231,6 @@ describe('SessionCache', () => {
           teamId: 'team-1',
           tmbId: 'tmb-1',
           isRoot: true,
-          isCancelling: false,
           createdAt: 3000
         }
       }
@@ -295,7 +250,6 @@ describe('SessionCache adapter integration', () => {
         teamId: 'team-1',
         tmbId: 'tmb-1',
         isRoot: '0',
-        isCancelling: '0',
         createdAt: '1000'
       }),
       hmset: vi.fn().mockResolvedValue('OK'),
@@ -336,7 +290,6 @@ describe('SessionCache adapter integration', () => {
       teamId: 'team-1',
       tmbId: 'tmb-1',
       isRoot: '0',
-      isCancelling: '0',
       createdAt: '1000'
     });
     expect(multi.expire).toHaveBeenCalledWith(

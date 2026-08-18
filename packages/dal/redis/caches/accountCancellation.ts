@@ -1,10 +1,10 @@
 import { createRedisLogicalKey, redisCacheAdapter, type RedisCacheAdapter } from '../adapter';
 import type { RedisCacheLogger } from '../types';
 
-/** 注销状态缓存 TTL；生命周期变更会主动刷新或清理，TTL 只负责异常情况下的最终回收。 */
+/** 注销状态缓存 TTL；读取和生命周期写入都会刷新过期时间。 */
 export const ACCOUNT_CANCELLATION_CACHE_TTL_MS = 5 * 60 * 1000;
 
-export type AccountCancellationCacheScope = 'team' | 'member';
+export type AccountCancellationCacheScope = 'team' | 'user';
 
 export type AccountCancellationCacheOptions = {
   redis?: RedisCacheAdapter;
@@ -15,12 +15,19 @@ const noopLogger: RedisCacheLogger<'warn'> = {
   warn: () => undefined
 };
 
+const GET_AND_REFRESH_TTL_SCRIPT = `
+local value = redis.call("get", KEYS[1])
+if value then
+  redis.call("pexpire", KEYS[1], ARGV[1])
+end
+return value
+`;
+
 /**
- * API Key 注销状态 Cache。
+ * 鉴权注销状态 Cache。
  *
- * Cache 同时保存 active 和 inactive 两种短期状态；生命周期写入会主动覆盖 inactive，取消或
- * 完成注销会删除 marker。读取失败统一返回 miss，由 Service 回源 Mongo，避免 Redis 故障放行
- * 注销中的账号。
+ * Cache 保存 active 和 inactive 状态。读取失败统一返回 miss，由 Service 回源 Mongo；
+ * 读取命中时在同一个 Lua 脚本中刷新 TTL，避免旧读值覆盖并发的生命周期更新。
  */
 export class AccountCancellationCache {
   private readonly redis: RedisCacheAdapter;
@@ -37,15 +44,18 @@ export class AccountCancellationCache {
   private getKey = (scope: AccountCancellationCacheScope, id: string) =>
     createRedisLogicalKey({
       namespace: 'account-cancellation',
-      version: 1,
       segments: [scope, id]
     });
 
-  /** 返回缓存状态；Redis miss、异常或损坏值均返回 undefined，交由调用方回源。 */
+  /** 返回缓存状态并续期；Redis miss、异常或损坏值均返回 undefined，交由调用方回源。 */
   async get(scope: AccountCancellationCacheScope, id: string): Promise<boolean | undefined> {
     try {
-      const value = await this.redis.get(this.getKey(scope, id));
-      if (value === null) return undefined;
+      const value = await this.redis.evalScript({
+        script: GET_AND_REFRESH_TTL_SCRIPT,
+        keys: [this.getKey(scope, id)],
+        args: [ACCOUNT_CANCELLATION_CACHE_TTL_MS]
+      });
+      if (value === null || value === false) return undefined;
       if (value === '1') return true;
       if (value === '0') return false;
 
@@ -56,7 +66,7 @@ export class AccountCancellationCache {
     return undefined;
   }
 
-  /** 写入短期状态；写入失败只降级为后续请求回源 Mongo。 */
+  /** 写入 0/1 状态并设置 5 分钟 TTL。 */
   async set(scope: AccountCancellationCacheScope, id: string, active: boolean) {
     try {
       await this.redis.set({
@@ -86,26 +96,6 @@ export class AccountCancellationCache {
   }) => {
     const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
     await Promise.all(uniqueIds.map((id) => this.set(scope, id, active)));
-  };
-
-  /** 删除状态 marker；删除失败保持 active 语义，后续 miss 会回源 Mongo。 */
-  async clear(scope: AccountCancellationCacheScope, id: string) {
-    try {
-      await this.redis.delete(this.getKey(scope, id));
-    } catch (error) {
-      this.logger.warn('Failed to clear account cancellation cache', { scope, id, error });
-    }
-  }
-
-  clearMany = async ({
-    scope,
-    ids
-  }: {
-    scope: AccountCancellationCacheScope;
-    ids: readonly string[];
-  }) => {
-    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
-    await Promise.all(uniqueIds.map((id) => this.clear(scope, id)));
   };
 }
 

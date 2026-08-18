@@ -99,46 +99,43 @@ describe('getActiveAccountCancellationsByTeams', () => {
     ]);
   });
 
-  it('reuses known owner cancellations and maps records back to every matching team', async () => {
-    const knownOwnerId = new Types.ObjectId();
-    const queriedOwnerId = new Types.ObjectId();
-    const [knownTeam, queriedTeam] = await MongoTeam.create([
-      { name: 'Known owner team', ownerId: knownOwnerId },
-      { name: 'Queried owner team', ownerId: queriedOwnerId }
+  it('maps active owner cancellations back to every matching team', async () => {
+    const firstOwnerId = new Types.ObjectId();
+    const secondOwnerId = new Types.ObjectId();
+    const [firstTeam, secondTeam] = await MongoTeam.create([
+      { name: 'First owner team', ownerId: firstOwnerId },
+      { name: 'Second owner team', ownerId: secondOwnerId }
     ]);
-    const queriedRecord = await MongoAccountCancellation.create({
-      userId: queriedOwnerId,
-      status: AccountCancellationStatus.pending,
-      requestedAt: new Date()
-    });
+    const [firstRecord, secondRecord] = await MongoAccountCancellation.create([
+      {
+        userId: firstOwnerId,
+        status: AccountCancellationStatus.finalizing,
+        requestedAt: new Date()
+      },
+      {
+        userId: secondOwnerId,
+        status: AccountCancellationStatus.pending,
+        requestedAt: new Date()
+      }
+    ]);
     const findSpy = vi.spyOn(MongoAccountCancellation, 'find');
 
-    const result = await getActiveAccountCancellationsByTeams(
-      [knownTeam, queriedTeam],
-      [
-        {
-          userId: knownOwnerId,
-          status: AccountCancellationStatus.finalizing,
-          requestedAt: new Date()
-        }
-      ]
-    );
+    const result = await getActiveAccountCancellationsByTeams([firstTeam, secondTeam]);
 
     expect(findSpy).toHaveBeenCalledTimes(1);
     expect(findSpy.mock.calls[0][0]).toMatchObject({
-      userId: { $in: [String(queriedOwnerId)] },
+      userId: { $in: [String(firstOwnerId), String(secondOwnerId)] },
       status: { $in: ['pending', 'finalizing'] }
     });
     expect(result).toHaveLength(2);
     expect(result.map(({ teamId }) => teamId)).toEqual([
-      String(knownTeam._id),
-      String(queriedTeam._id)
+      String(firstTeam._id),
+      String(secondTeam._id)
     ]);
-    expect(result[1].record).toMatchObject({
-      status: AccountCancellationStatus.pending
-    });
-    expect(String(result[1].record._id)).toBe(String(queriedRecord._id));
-    expect(String(result[1].record.userId)).toBe(String(queriedOwnerId));
+    expect(result.map(({ record }) => String(record._id))).toEqual([
+      String(firstRecord._id),
+      String(secondRecord._id)
+    ]);
   });
 
   it('returns without querying when teams are empty or have no owners', async () => {
@@ -172,40 +169,15 @@ describe('getActiveAccountCancellationsByTeams', () => {
     expect(findSpy.mock.calls[0][0]).toMatchObject({ userId: { $in: [String(ownerId)] } });
   });
 
-  it('skips the query when known records cover all owners, including unrelated owners', async () => {
-    const ownerId = new Types.ObjectId();
-    const findSpy = vi.spyOn(MongoAccountCancellation, 'find');
-
-    await expect(
-      getActiveAccountCancellationsByTeams(
-        [{ _id: 'team-1', ownerId }],
-        [
-          { userId: ownerId, status: AccountCancellationStatus.pending, requestedAt: new Date() },
-          {
-            userId: new Types.ObjectId(),
-            status: AccountCancellationStatus.pending,
-            requestedAt: new Date()
-          }
-        ]
-      )
-    ).resolves.toHaveLength(1);
-
-    expect(findSpy).not.toHaveBeenCalled();
-  });
-
   it.each([AccountCancellationStatus.pending, AccountCancellationStatus.finalizing])(
-    'returns matching %s cancellation and ignores unrelated known owners',
+    'returns matching %s cancellation',
     async (status) => {
       const ownerId = new Types.ObjectId();
-      const unrelatedOwnerId = new Types.ObjectId();
       const findSpy = vi.spyOn(MongoAccountCancellation, 'find').mockReturnValue({
         lean: vi.fn().mockResolvedValue([{ userId: ownerId, status, requestedAt: new Date() }])
       } as any);
 
-      const result = await getActiveAccountCancellationsByTeams(
-        [{ _id: 'team-1', ownerId }],
-        [{ userId: unrelatedOwnerId, status, requestedAt: new Date() }]
-      );
+      const result = await getActiveAccountCancellationsByTeams([{ _id: 'team-1', ownerId }]);
 
       expect(findSpy).toHaveBeenCalledTimes(1);
       expect(result).toHaveLength(1);

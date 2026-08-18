@@ -10,7 +10,10 @@ import { AppTypeEnum } from '@fastgpt/global/core/app/constants';
 import { type FlowNodeInputItemType } from '@fastgpt/global/core/workflow/type/io';
 import { type toolCallProps } from './type';
 import { type AppSchemaType } from '@fastgpt/global/core/app/type';
-import { getRunningUserInfoByTmbId } from '@fastgpt/service/support/user/team/utils';
+import {
+  getRunningUserInfoByTmbId,
+  getUserIdByTmbId
+} from '@fastgpt/service/support/user/team/utils';
 import { getNanoid } from '@fastgpt/global/common/string/tools';
 import { type AIChatItemType, type UserChatItemType } from '@fastgpt/global/core/chat/type';
 import {
@@ -46,7 +49,10 @@ import { assertCancellation } from '@fastgpt/service/support/user/account/cancel
 
 const assertMcpTeamUsable = async (mcp: { teamId?: string; tmbId?: string }) => {
   if (!mcp.teamId || !mcp.tmbId) return;
-  await assertCancellation({ teamId: mcp.teamId, tmbId: mcp.tmbId });
+  await assertCancellation({
+    teamId: mcp.teamId,
+    userId: await getUserIdByTmbId(mcp.tmbId)
+  });
 };
 
 const stringifyMcpPluginOutput = (pluginOutput: unknown) => {

@@ -1,55 +1,57 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  ACCOUNT_CANCELLATION_CACHE_TTL_MS,
-  AccountCancellationCache
-} from '@fastgpt/dal/redis/caches';
+import { AccountCancellationCache } from '@fastgpt/dal/redis/caches';
 
 describe('AccountCancellationCache', () => {
   const redis = {
-    delete: vi.fn(),
-    get: vi.fn(),
+    evalScript: vi.fn(),
     set: vi.fn()
   };
   const logger = { warn: vi.fn() };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    redis.get.mockResolvedValue(null);
+    redis.evalScript.mockResolvedValue(null);
     redis.set.mockResolvedValue(undefined);
-    redis.delete.mockResolvedValue(true);
   });
 
-  it('reads active, inactive and missing states using scoped encoded keys', async () => {
+  it('reads active, inactive and missing states using scoped keys and refreshes TTL', async () => {
     const cache = new AccountCancellationCache({ redis: redis as any, logger });
 
-    redis.get.mockResolvedValueOnce('1');
+    redis.evalScript.mockResolvedValueOnce('1');
     await expect(cache.get('team', 'team/1')).resolves.toBe(true);
 
-    redis.get.mockResolvedValueOnce('0');
-    await expect(cache.get('member', 'tmb-1')).resolves.toBe(false);
+    redis.evalScript.mockResolvedValueOnce('0');
+    await expect(cache.get('user', 'user-1')).resolves.toBe(false);
 
     await expect(cache.get('team', 'missing')).resolves.toBeUndefined();
-    expect(redis.get).toHaveBeenNthCalledWith(1, 'account-cancellation:v1:team:team%2F1');
+    expect(redis.evalScript).toHaveBeenNthCalledWith(1, {
+      script: expect.stringContaining('pexpire'),
+      keys: ['account-cancellation:team:team%2F1'],
+      args: [300000]
+    });
+    expect(redis.evalScript).toHaveBeenNthCalledWith(2, {
+      script: expect.stringContaining('pexpire'),
+      keys: ['account-cancellation:user:user-1'],
+      args: [300000]
+    });
   });
 
-  it('writes status with the shared short TTL and clears markers', async () => {
+  it('writes 0/1 status with a five-minute TTL', async () => {
     const cache = new AccountCancellationCache({ redis: redis as any, logger });
 
-    await cache.set('member', 'tmb-1', true);
-    await cache.clear('member', 'tmb-1');
+    await cache.set('user', 'user-1', false);
 
     expect(redis.set).toHaveBeenCalledWith({
-      key: 'account-cancellation:v1:member:tmb-1',
-      value: '1',
-      ttlMs: ACCOUNT_CANCELLATION_CACHE_TTL_MS
+      key: 'account-cancellation:user:user-1',
+      value: '0',
+      ttlMs: 300000
     });
-    expect(redis.delete).toHaveBeenCalledWith('account-cancellation:v1:member:tmb-1');
   });
 
   it('deduplicates batch refreshes', async () => {
     const cache = new AccountCancellationCache({ redis: redis as any, logger });
 
-    await cache.setMany({ scope: 'team', ids: ['team-1', 'team-1', 'team-2'], active: true });
+    await cache.setMany({ scope: 'user', ids: ['user-1', 'user-1', 'user-2'], active: true });
 
     expect(redis.set).toHaveBeenCalledTimes(2);
   });
@@ -57,7 +59,7 @@ describe('AccountCancellationCache', () => {
   it('converts Redis read and write failures into a miss or no-op', async () => {
     const readError = new Error('read failed');
     const writeError = new Error('write failed');
-    redis.get.mockRejectedValueOnce(readError);
+    redis.evalScript.mockRejectedValueOnce(readError);
     redis.set.mockRejectedValueOnce(writeError);
     const cache = new AccountCancellationCache({ redis: redis as any, logger });
 

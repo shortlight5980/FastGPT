@@ -5,7 +5,6 @@ import { AccountCancellationCache } from '@fastgpt/dal/redis/caches';
 import { Types } from '@fastgpt/service/common/mongo';
 import { assertCancellation } from '@fastgpt/service/support/user/account/cancellation/guard';
 import { MongoAccountCancellation } from '@fastgpt/service/support/user/account/cancellation/schema';
-import { MongoTeamMember } from '@fastgpt/service/support/user/team/teamMemberSchema';
 import { MongoTeam } from '@fastgpt/service/support/user/team/teamSchema';
 
 describe('assertCancellation Redis cache path', () => {
@@ -13,53 +12,92 @@ describe('assertCancellation Redis cache path', () => {
   let cacheSet: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
-    await Promise.all([
-      MongoAccountCancellation.deleteMany({}),
-      MongoTeamMember.deleteMany({}),
-      MongoTeam.deleteMany({})
-    ]);
+    await Promise.all([MongoAccountCancellation.deleteMany({}), MongoTeam.deleteMany({})]);
 
     vi.restoreAllMocks();
     cacheGet = vi.spyOn(AccountCancellationCache.prototype, 'get').mockResolvedValue(undefined);
     cacheSet = vi.spyOn(AccountCancellationCache.prototype, 'set').mockResolvedValue(undefined);
   });
 
-  it('rejects from an active team cache hit without querying Mongo', async () => {
-    const teamId = new Types.ObjectId().toString();
-    const tmbId = new Types.ObjectId().toString();
-    cacheGet.mockImplementation(async (scope: 'team' | 'member') => scope === 'team');
+  it('falls back to Mongo on an active team cache hit and rejects', async () => {
+    const ownerId = new Types.ObjectId();
+    const team = await MongoTeam.create({
+      name: 'Active team cache team',
+      ownerId
+    });
+    await MongoAccountCancellation.create({
+      userId: ownerId,
+      status: 'pending',
+      requestedAt: new Date()
+    });
+    cacheGet.mockImplementation(async (scope: 'team' | 'user') => scope === 'team');
     const teamFindById = vi.spyOn(MongoTeam, 'findById');
-    const memberFindById = vi.spyOn(MongoTeamMember, 'findById');
 
-    await expect(assertCancellation({ teamId, tmbId })).rejects.toThrow(
+    await expect(assertCancellation({ teamId: String(team._id) })).rejects.toThrow(
       TeamErrEnum.accountCancellationPending
     );
 
-    expect(teamFindById).not.toHaveBeenCalled();
-    expect(memberFindById).not.toHaveBeenCalled();
+    expect(teamFindById).toHaveBeenCalledWith(String(team._id), { ownerId: 1 });
     expect(cacheSet).not.toHaveBeenCalled();
   });
 
   it('falls back on miss and caches the verified inactive state', async () => {
+    const userId = new Types.ObjectId();
     const team = await MongoTeam.create({
       name: 'Cache fallback team',
       ownerId: new Types.ObjectId()
     });
-    const member = await MongoTeamMember.create({
-      teamId: team._id,
-      userId: new Types.ObjectId(),
-      name: 'Member',
-      status: 'active'
-    });
-
     await expect(
-      assertCancellation({ teamId: String(team._id), tmbId: String(member._id) })
+      assertCancellation({ teamId: String(team._id), userId: String(userId) })
     ).resolves.toBeUndefined();
 
     expect(cacheGet).toHaveBeenCalledWith('team', String(team._id));
-    expect(cacheGet).toHaveBeenCalledWith('member', String(member._id));
+    expect(cacheGet).toHaveBeenCalledWith('user', String(userId));
     expect(cacheSet).toHaveBeenNthCalledWith(1, 'team', String(team._id), false);
-    expect(cacheSet).toHaveBeenNthCalledWith(2, 'member', String(member._id), false);
+    expect(cacheSet).toHaveBeenNthCalledWith(2, 'user', String(userId), false);
+  });
+
+  it('uses the inactive user cache without querying cancellation records', async () => {
+    const userId = new Types.ObjectId();
+    const team = await MongoTeam.create({
+      name: 'Inactive user cache team',
+      ownerId: new Types.ObjectId()
+    });
+    cacheGet.mockResolvedValue(false);
+    const cancellationFindOne = vi.spyOn(MongoAccountCancellation, 'findOne');
+
+    await expect(
+      assertCancellation({ teamId: String(team._id), userId: String(userId) })
+    ).resolves.toBeUndefined();
+
+    expect(cacheGet).toHaveBeenCalledWith('user', String(userId));
+    expect(cancellationFindOne).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Mongo on an active user cache hit and rejects', async () => {
+    const userId = new Types.ObjectId();
+    const team = await MongoTeam.create({
+      name: 'Active user cache team',
+      ownerId: new Types.ObjectId()
+    });
+    await MongoAccountCancellation.create({
+      userId,
+      status: 'pending',
+      requestedAt: new Date()
+    });
+    cacheGet.mockImplementation(async (scope: 'team' | 'user') => scope === 'user');
+    const cancellationFindOne = vi.spyOn(MongoAccountCancellation, 'findOne');
+
+    await expect(
+      assertCancellation({ teamId: String(team._id), userId: String(userId) })
+    ).rejects.toThrow(UserErrEnum.accountCancellationPending);
+
+    expect(cacheGet).toHaveBeenCalledWith('user', String(userId));
+    expect(cancellationFindOne).toHaveBeenCalledWith({
+      userId: String(userId),
+      status: { $in: ['pending', 'finalizing'] }
+    });
+    expect(cacheSet).not.toHaveBeenCalled();
   });
 
   it('caches an active member result before rejecting', async () => {
@@ -68,12 +106,6 @@ describe('assertCancellation Redis cache path', () => {
       name: 'Active member cancellation team',
       ownerId: new Types.ObjectId()
     });
-    const member = await MongoTeamMember.create({
-      teamId: team._id,
-      userId,
-      name: 'Member',
-      status: 'active'
-    });
     await MongoAccountCancellation.create({
       userId,
       status: 'pending',
@@ -81,10 +113,10 @@ describe('assertCancellation Redis cache path', () => {
     });
 
     await expect(
-      assertCancellation({ teamId: String(team._id), tmbId: String(member._id) })
+      assertCancellation({ teamId: String(team._id), userId: String(userId) })
     ).rejects.toThrow(UserErrEnum.accountCancellationPending);
 
     expect(cacheSet).toHaveBeenNthCalledWith(1, 'team', String(team._id), false);
-    expect(cacheSet).toHaveBeenNthCalledWith(2, 'member', String(member._id), true);
+    expect(cacheSet).toHaveBeenNthCalledWith(2, 'user', String(userId), true);
   });
 });

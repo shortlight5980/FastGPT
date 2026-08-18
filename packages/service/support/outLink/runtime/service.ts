@@ -43,7 +43,7 @@ import {
 import { MongoChat } from '../../../core/chat/chatSchema';
 import { buildChatSourceQuery, type ChatSourceParams } from '../../../core/chat/source';
 import { MongoChatItem } from '../../../core/chat/chatItemSchema';
-import { getRunningUserInfoByTmbId } from '../../../support/user/team/utils';
+import { getRunningUserInfoByTmbId, getUserIdByTmbId } from '../../../support/user/team/utils';
 import { addOutLinkUsage } from '../../../support/outLink/tools';
 import { getLogger, LogCategories } from '../../../common/logger';
 import { mongoSessionRun } from '../../../common/mongo/sessionRun';
@@ -258,7 +258,7 @@ export async function runOutlinkRuntime<T extends OutlinkAppType>({
   // 分享链接没有用户 Session，使用发布链接绑定的 tmb/team 校验账号可用性
   await assertCancellation({
     teamId: String(outLinkConfig.teamId),
-    tmbId: String(outLinkConfig.tmbId)
+    userId: await getUserIdByTmbId(String(outLinkConfig.tmbId))
   });
 
   const roundState = {
