@@ -4,7 +4,8 @@ import { AccountCancellationCache } from '@fastgpt/dal/redis/caches';
 describe('AccountCancellationCache', () => {
   const redis = {
     evalScript: vi.fn(),
-    set: vi.fn()
+    set: vi.fn(),
+    setIfAbsent: vi.fn()
   };
   const logger = { warn: vi.fn() };
 
@@ -12,6 +13,7 @@ describe('AccountCancellationCache', () => {
     vi.clearAllMocks();
     redis.evalScript.mockResolvedValue(null);
     redis.set.mockResolvedValue(undefined);
+    redis.setIfAbsent.mockResolvedValue(true);
   });
 
   it('reads active, inactive and missing states using scoped keys and refreshes TTL', async () => {
@@ -48,6 +50,18 @@ describe('AccountCancellationCache', () => {
     });
   });
 
+  it('initializes only missing keys with an atomic SET NX and five-minute TTL', async () => {
+    const cache = new AccountCancellationCache({ redis: redis as any, logger });
+
+    await expect(cache.setIfAbsent('user', 'user-1', true)).resolves.toBe(true);
+
+    expect(redis.setIfAbsent).toHaveBeenCalledWith({
+      key: 'account-cancellation:user:user-1',
+      value: '1',
+      ttlSeconds: 300
+    });
+  });
+
   it('deduplicates batch refreshes', async () => {
     const cache = new AccountCancellationCache({ redis: redis as any, logger });
 
@@ -61,10 +75,12 @@ describe('AccountCancellationCache', () => {
     const writeError = new Error('write failed');
     redis.evalScript.mockRejectedValueOnce(readError);
     redis.set.mockRejectedValueOnce(writeError);
+    redis.setIfAbsent.mockRejectedValueOnce(writeError);
     const cache = new AccountCancellationCache({ redis: redis as any, logger });
 
     await expect(cache.get('team', 'team-1')).resolves.toBeUndefined();
     await expect(cache.set('team', 'team-1', false)).resolves.toBeUndefined();
+    await expect(cache.setIfAbsent('team', 'team-1', false)).resolves.toBe(false);
 
     expect(logger.warn).toHaveBeenNthCalledWith(1, 'Failed to read account cancellation cache', {
       scope: 'team',
@@ -77,5 +93,15 @@ describe('AccountCancellationCache', () => {
       active: false,
       error: writeError
     });
+    expect(logger.warn).toHaveBeenNthCalledWith(
+      3,
+      'Failed to initialize account cancellation cache',
+      {
+        scope: 'team',
+        id: 'team-1',
+        active: false,
+        error: writeError
+      }
+    );
   });
 });

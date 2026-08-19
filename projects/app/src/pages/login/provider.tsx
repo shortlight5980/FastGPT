@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useSystemStore } from '@/web/common/system/useSystemStore';
 import { useUserStore } from '@/web/support/user/useUserStore';
@@ -24,8 +24,6 @@ import type { LoginSuccessResponseType } from '@fastgpt/global/openapi/support/u
 import { useLoginRedirectAfterLogin } from '@/web/support/user/loginRedirect';
 import type { LangEnum } from '@fastgpt/global/common/i18n/type';
 
-let isOauthLogging = false;
-
 const provider = () => {
   const { t, i18n } = useTranslation();
   const { initd, loginStore, setLoginStore } = useSystemStore();
@@ -34,6 +32,7 @@ const provider = () => {
   const { state, error, ...props } = router.query as Record<string, string>;
   const { toast } = useToast();
   const resolveLoginRedirect = useLoginRedirectAfterLogin();
+  const handledCallbackRef = useRef<string>();
 
   const lastRoute = loginStore?.lastRoute
     ? validateRedirectUrl(loginStore.lastRoute)
@@ -177,9 +176,9 @@ const provider = () => {
 
     if (!props || !initd) return;
 
-    if (isOauthLogging) return;
-
-    isOauthLogging = true;
+    const callbackKey = router.asPath;
+    if (handledCallbackRef.current === callbackKey) return;
+    handledCallbackRef.current = callbackKey;
 
     (async () => {
       if (loginStore?.flow !== 'accountCancellation') {

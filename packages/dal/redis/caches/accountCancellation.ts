@@ -84,6 +84,29 @@ export class AccountCancellationCache {
     }
   }
 
+  /** 仅在 Cache miss 时初始化状态，避免回源旧结果覆盖生命周期写入。 */
+  async setIfAbsent(
+    scope: AccountCancellationCacheScope,
+    id: string,
+    active: boolean
+  ): Promise<boolean> {
+    try {
+      return await this.redis.setIfAbsent({
+        key: this.getKey(scope, id),
+        value: active ? '1' : '0',
+        ttlSeconds: ACCOUNT_CANCELLATION_CACHE_TTL_MS / 1000
+      });
+    } catch (error) {
+      this.logger.warn('Failed to initialize account cancellation cache', {
+        scope,
+        id,
+        active,
+        error
+      });
+      return false;
+    }
+  }
+
   /** 批量刷新同一作用域的状态；空集合不访问 Redis。 */
   setMany = async ({
     scope,

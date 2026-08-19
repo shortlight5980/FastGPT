@@ -25,8 +25,8 @@ export const getActiveAccountCancellationByUserId = async (userId?: string) => {
     status: accountCancellationActiveStatusFilter
   }).lean();
 
-  if (cachedCancellation === undefined || !cancellation) {
-    await accountCancellationCache.set('user', userId, !!cancellation);
+  if (cachedCancellation === undefined) {
+    await accountCancellationCache.setIfAbsent('user', userId, !!cancellation);
   }
 
   return cancellation;
@@ -44,7 +44,9 @@ export const getActiveAccountCancellationByTeamId = async (teamId?: string) => {
 
   const team = await MongoTeam.findById(teamId, { ownerId: 1 }).lean();
   if (!team?.ownerId) {
-    await accountCancellationCache.set('team', teamId, false);
+    if (cachedCancellation === undefined) {
+      await accountCancellationCache.setIfAbsent('team', teamId, false);
+    }
     return null;
   }
 
@@ -53,8 +55,8 @@ export const getActiveAccountCancellationByTeamId = async (teamId?: string) => {
     status: accountCancellationActiveStatusFilter
   }).lean();
 
-  if (cachedCancellation === undefined || !cancellation) {
-    await accountCancellationCache.set('team', teamId, !!cancellation);
+  if (cachedCancellation === undefined) {
+    await accountCancellationCache.setIfAbsent('team', teamId, !!cancellation);
   }
 
   return cancellation;

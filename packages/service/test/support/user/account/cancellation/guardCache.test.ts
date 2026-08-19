@@ -10,6 +10,7 @@ import { MongoTeam } from '@fastgpt/service/support/user/team/teamSchema';
 describe('assertCancellation Redis cache path', () => {
   let cacheGet: ReturnType<typeof vi.spyOn>;
   let cacheSet: ReturnType<typeof vi.spyOn>;
+  let cacheSetIfAbsent: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     await Promise.all([MongoAccountCancellation.deleteMany({}), MongoTeam.deleteMany({})]);
@@ -17,6 +18,9 @@ describe('assertCancellation Redis cache path', () => {
     vi.restoreAllMocks();
     cacheGet = vi.spyOn(AccountCancellationCache.prototype, 'get').mockResolvedValue(undefined);
     cacheSet = vi.spyOn(AccountCancellationCache.prototype, 'set').mockResolvedValue(undefined);
+    cacheSetIfAbsent = vi
+      .spyOn(AccountCancellationCache.prototype, 'setIfAbsent')
+      .mockResolvedValue(true);
   });
 
   it('falls back to Mongo on an active team cache hit and rejects', async () => {
@@ -53,8 +57,8 @@ describe('assertCancellation Redis cache path', () => {
 
     expect(cacheGet).toHaveBeenCalledWith('team', String(team._id));
     expect(cacheGet).toHaveBeenCalledWith('user', String(userId));
-    expect(cacheSet).toHaveBeenNthCalledWith(1, 'team', String(team._id), false);
-    expect(cacheSet).toHaveBeenNthCalledWith(2, 'user', String(userId), false);
+    expect(cacheSetIfAbsent).toHaveBeenNthCalledWith(1, 'team', String(team._id), false);
+    expect(cacheSetIfAbsent).toHaveBeenNthCalledWith(2, 'user', String(userId), false);
   });
 
   it('uses the inactive user cache without querying cancellation records', async () => {
@@ -116,7 +120,23 @@ describe('assertCancellation Redis cache path', () => {
       assertCancellation({ teamId: String(team._id), userId: String(userId) })
     ).rejects.toThrow(UserErrEnum.accountCancellationPending);
 
-    expect(cacheSet).toHaveBeenNthCalledWith(1, 'team', String(team._id), false);
-    expect(cacheSet).toHaveBeenNthCalledWith(2, 'user', String(userId), true);
+    expect(cacheSetIfAbsent).toHaveBeenNthCalledWith(1, 'team', String(team._id), false);
+    expect(cacheSetIfAbsent).toHaveBeenNthCalledWith(2, 'user', String(userId), true);
+  });
+
+  it('does not overwrite an active cache marker when Mongo no longer has a record', async () => {
+    const userId = new Types.ObjectId();
+    const team = await MongoTeam.create({
+      name: 'Stale active cache team',
+      ownerId: new Types.ObjectId()
+    });
+    cacheGet.mockImplementation(async (scope: 'team' | 'user') => scope === 'user');
+
+    await expect(
+      assertCancellation({ teamId: String(team._id), userId: String(userId) })
+    ).resolves.toBeUndefined();
+
+    expect(cacheSetIfAbsent).not.toHaveBeenCalled();
+    expect(cacheSet).not.toHaveBeenCalled();
   });
 });
