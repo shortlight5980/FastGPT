@@ -81,6 +81,7 @@ export class AccountCancellationCache {
         active,
         error
       });
+      throw error;
     }
   }
 
@@ -104,6 +105,29 @@ export class AccountCancellationCache {
         error
       });
       return false;
+    }
+  }
+
+  /** 清理一组状态 marker；生命周期写入失败时用 miss 触发 Mongo 回源。 */
+  async clearMany({
+    scope,
+    ids
+  }: {
+    scope: AccountCancellationCacheScope;
+    ids: readonly string[];
+  }) {
+    const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+    if (uniqueIds.length === 0) return;
+
+    try {
+      await this.redis.deleteMany(uniqueIds.map((id) => this.getKey(scope, id)));
+    } catch (error) {
+      this.logger.warn('Failed to clear account cancellation cache', {
+        scope,
+        ids: uniqueIds,
+        error
+      });
+      throw error;
     }
   }
 

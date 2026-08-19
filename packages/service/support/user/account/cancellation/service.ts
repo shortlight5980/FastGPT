@@ -40,7 +40,8 @@ export const getAccountCancellationCacheTargets = async (
  * 刷新鉴权注销状态 Cache。
  *
  * active 时写入 1，取消注销或最终清理时写入 0。Redis 只是加速层，刷新失败时鉴权仍会
- * 在 Cache miss 时回源 Mongo，因此不能因为缓存故障放行注销中的账号。
+ * 在 Cache miss 时回源 Mongo，因此不能因为缓存故障放行注销中的账号。写入失败时清理
+ * 相关 marker，避免旧的 inactive marker 继续短路 Mongo。
  */
 export const syncAccountCancellationCache = async ({
   userId,
@@ -53,18 +54,32 @@ export const syncAccountCancellationCache = async ({
 }) => {
   const resolvedTargets = targets ?? (await getAccountCancellationCacheTargets(userId));
 
-  await Promise.all([
-    accountCancellationCache.setMany({
-      scope: 'team',
-      ids: resolvedTargets.teamIds,
-      active
-    }),
-    accountCancellationCache.setMany({
-      scope: 'user',
-      ids: resolvedTargets.userIds,
-      active
-    })
-  ]);
+  try {
+    await Promise.all([
+      accountCancellationCache.setMany({
+        scope: 'team',
+        ids: resolvedTargets.teamIds,
+        active
+      }),
+      accountCancellationCache.setMany({
+        scope: 'user',
+        ids: resolvedTargets.userIds,
+        active
+      })
+    ]);
+  } catch (error) {
+    await Promise.allSettled([
+      accountCancellationCache.clearMany({
+        scope: 'team',
+        ids: resolvedTargets.teamIds
+      }),
+      accountCancellationCache.clearMany({
+        scope: 'user',
+        ids: resolvedTargets.userIds
+      })
+    ]);
+    throw error;
+  }
 
   return resolvedTargets;
 };

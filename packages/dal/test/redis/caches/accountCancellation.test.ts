@@ -5,7 +5,8 @@ describe('AccountCancellationCache', () => {
   const redis = {
     evalScript: vi.fn(),
     set: vi.fn(),
-    setIfAbsent: vi.fn()
+    setIfAbsent: vi.fn(),
+    deleteMany: vi.fn()
   };
   const logger = { warn: vi.fn() };
 
@@ -14,6 +15,7 @@ describe('AccountCancellationCache', () => {
     redis.evalScript.mockResolvedValue(null);
     redis.set.mockResolvedValue(undefined);
     redis.setIfAbsent.mockResolvedValue(true);
+    redis.deleteMany.mockResolvedValue(undefined);
   });
 
   it('reads active, inactive and missing states using scoped keys and refreshes TTL', async () => {
@@ -70,7 +72,18 @@ describe('AccountCancellationCache', () => {
     expect(redis.set).toHaveBeenCalledTimes(2);
   });
 
-  it('converts Redis read and write failures into a miss or no-op', async () => {
+  it('clears deduplicated scoped markers', async () => {
+    const cache = new AccountCancellationCache({ redis: redis as any, logger });
+
+    await cache.clearMany({ scope: 'user', ids: ['user-1', 'user-1', 'user-2'] });
+
+    expect(redis.deleteMany).toHaveBeenCalledWith([
+      'account-cancellation:user:user-1',
+      'account-cancellation:user:user-2'
+    ]);
+  });
+
+  it('converts Redis read failures into a miss and exposes lifecycle write failures', async () => {
     const readError = new Error('read failed');
     const writeError = new Error('write failed');
     redis.evalScript.mockRejectedValueOnce(readError);
@@ -79,7 +92,7 @@ describe('AccountCancellationCache', () => {
     const cache = new AccountCancellationCache({ redis: redis as any, logger });
 
     await expect(cache.get('team', 'team-1')).resolves.toBeUndefined();
-    await expect(cache.set('team', 'team-1', false)).resolves.toBeUndefined();
+    await expect(cache.set('team', 'team-1', false)).rejects.toBe(writeError);
     await expect(cache.setIfAbsent('team', 'team-1', false)).resolves.toBe(false);
 
     expect(logger.warn).toHaveBeenNthCalledWith(1, 'Failed to read account cancellation cache', {

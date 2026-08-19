@@ -77,6 +77,10 @@ describe('account cancellation leases', () => {
 });
 
 describe('account cancellation cache synchronization', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('collects team/user targets and updates team and user keys', async () => {
     vi.spyOn(MongoTeam, 'find').mockReturnValue({
       lean: vi.fn().mockResolvedValue([{ _id: 'team-1' }])
@@ -95,5 +99,25 @@ describe('account cancellation cache synchronization', () => {
 
     expect(set).toHaveBeenCalledWith('team', 'team-1', true);
     expect(set).toHaveBeenCalledWith('user', 'user-1', true);
+  });
+
+  it('clears all markers and exposes lifecycle cache write failures', async () => {
+    const error = new Error('redis unavailable');
+    const set = vi.spyOn(AccountCancellationCache.prototype, 'set').mockRejectedValue(error);
+    const clearMany = vi
+      .spyOn(AccountCancellationCache.prototype, 'clearMany')
+      .mockResolvedValue(undefined);
+
+    await expect(
+      syncAccountCancellationCache({
+        userId: 'user-1',
+        active: true,
+        targets: { teamIds: ['team-1'], userIds: ['user-1'] }
+      })
+    ).rejects.toBe(error);
+
+    expect(set).toHaveBeenCalled();
+    expect(clearMany).toHaveBeenCalledWith({ scope: 'team', ids: ['team-1'] });
+    expect(clearMany).toHaveBeenCalledWith({ scope: 'user', ids: ['user-1'] });
   });
 });
