@@ -7,6 +7,7 @@ import {
 
 import {
   assertAccountCancellationMethod,
+  clearAccountCancellationCache,
   getAccountCancellationCacheTargets,
   syncAccountCancellationCache,
   withAccountCancellationTeamLock,
@@ -117,6 +118,20 @@ describe('account cancellation cache synchronization', () => {
     ).rejects.toBe(error);
 
     expect(set).toHaveBeenCalled();
+    expect(clearMany).toHaveBeenCalledWith({ scope: 'team', ids: ['team-1'] });
+    expect(clearMany).toHaveBeenCalledWith({ scope: 'user', ids: ['user-1'] });
+  });
+
+  it('clears team and user markers without writing an inactive state', async () => {
+    const clearMany = vi
+      .spyOn(AccountCancellationCache.prototype, 'clearMany')
+      .mockResolvedValue(undefined);
+
+    await clearAccountCancellationCache({
+      userId: 'user-1',
+      targets: { teamIds: ['team-1'], userIds: ['user-1'] }
+    });
+
     expect(clearMany).toHaveBeenCalledWith({ scope: 'team', ids: ['team-1'] });
     expect(clearMany).toHaveBeenCalledWith({ scope: 'user', ids: ['user-1'] });
   });

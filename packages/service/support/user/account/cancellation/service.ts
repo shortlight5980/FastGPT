@@ -85,6 +85,35 @@ export const syncAccountCancellationCache = async ({
 };
 
 /**
+ * 删除注销状态 Cache marker。
+ *
+ * Mongo 写入失败后只能删除 marker，不能写入 inactive 状态；这样下一次读取会以 Mongo
+ * 为准，即使本次 Mongo 写入的结果存在不确定性，也不会被错误的 false marker 放行。
+ */
+export const clearAccountCancellationCache = async ({
+  userId,
+  targets
+}: {
+  userId: string;
+  targets?: AccountCancellationCacheTargets;
+}) => {
+  const resolvedTargets = targets ?? (await getAccountCancellationCacheTargets(userId));
+
+  await Promise.all([
+    accountCancellationCache.clearMany({
+      scope: 'team',
+      ids: resolvedTargets.teamIds
+    }),
+    accountCancellationCache.clearMany({
+      scope: 'user',
+      ids: resolvedTargets.userIds
+    })
+  ]);
+
+  return resolvedTargets;
+};
+
+/**
  * 在注销用户维度串行化 submit、cancel、cron 和管理员删除，释放锁由 finally 保证。
  */
 export const withAccountCancellationUserLock = async <T>(userId: string, fn: () => Promise<T>) => {
