@@ -8,6 +8,10 @@ import { useSystemStore } from './useSystemStore';
 import { useUserModelStore } from '@/web/core/ai/model/useUserModelStore';
 import { getWebReqUrl } from '@fastgpt/web/common/system/utils';
 import {
+  FASTGPT_WEB_REQUEST_HEADER,
+  FASTGPT_WEB_REQUEST_VALUE
+} from '@fastgpt/global/common/system/constants';
+import {
   findClientModelByReference,
   findClientModelByValue
 } from '@/web/core/ai/model/modelReference';
@@ -46,17 +50,15 @@ export const downloadFetch = async ({
   body?: Record<string, any>;
   waitResponse?: boolean;
 }) => {
-  if (body || waitResponse) {
+  const shouldFetch = body || waitResponse || url.startsWith('/api');
+  if (shouldFetch) {
     const response = await fetch(getWebReqUrl(url), {
       method: body ? 'POST' : 'GET',
-      ...(body
-        ? {
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(body)
-          }
-        : {})
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        [FASTGPT_WEB_REQUEST_HEADER]: FASTGPT_WEB_REQUEST_VALUE
+      },
+      ...(body ? { body: JSON.stringify(body) } : {})
     });
 
     if (!response.ok) {
