@@ -1,5 +1,6 @@
 import {
   DatasetCollectionDataProcessModeEnum,
+  DatasetCollectionSyncResultEnum,
   DatasetCollectionTypeEnum
 } from '@fastgpt/global/core/dataset/constants';
 import { MongoDatasetCollection } from './schema';
@@ -33,10 +34,15 @@ import {
 import { DatasetDataIndexTypeEnum } from '@fastgpt/global/core/dataset/data/constants';
 import { getS3DatasetSource } from '../../../common/s3/sources/dataset';
 import { removeS3TTL, isS3ObjectKey } from '../../../common/s3/utils';
+import { addAuditLog } from '../../../support/user/audit/util';
+import { AuditEventEnum } from '@fastgpt/global/support/user/audit/constants';
+import { getLogger, LogCategories } from '../../../common/logger';
 import type {
   CreateCollectionWithResultResponseType,
   ApiCreateDatasetCollectionParams
 } from '@fastgpt/global/openapi/core/dataset/collection/createApi';
+
+const logger = getLogger(LogCategories.MODULE.DATASET.COLLECTION);
 
 export const createCollectionAndInsertData = async ({
   dataset,
@@ -45,7 +51,8 @@ export const createCollectionAndInsertData = async ({
   createCollectionParams,
   backupParse = false,
   billId,
-  session
+  session,
+  audit = true
 }: {
   dataset: DatasetSchemaType;
   rawText?: string;
@@ -56,6 +63,7 @@ export const createCollectionAndInsertData = async ({
 
   billId?: string;
   session?: ClientSession;
+  audit?: boolean;
 }): Promise<CreateCollectionWithResultResponseType> => {
   const agentModelData = getDatasetAgentModel(dataset);
   const embeddingModelData = getDatasetEmbeddingModel(dataset);
@@ -254,10 +262,42 @@ export const createCollectionAndInsertData = async ({
     };
   };
 
-  if (session) {
-    return fn(session);
+  const result = session ? await fn(session) : await mongoSessionRun(fn);
+
+  if (audit) {
+    const sourceType = (() => {
+      if (trainingType === DatasetCollectionDataProcessModeEnum.backup) return 'backup';
+      if (trainingType === DatasetCollectionDataProcessModeEnum.template) return 'template';
+      if (imageIds) return 'image';
+      if (createCollectionParams.rawLink) return 'link';
+      if (createCollectionParams.externalFileId || createCollectionParams.externalFileUrl) {
+        return 'external_file';
+      }
+      if (createCollectionParams.apiFileId) return 'api';
+      if (rawText) return 'text';
+      return 'file';
+    })();
+
+    // Audit persistence is best effort and must not extend the collection import request.
+    void addAuditLog({
+      teamId,
+      tmbId,
+      scope: 'member',
+      event: AuditEventEnum.IMPORT_DATASET_CONTENT,
+      params: {
+        datasetName: dataset.name,
+        collectionName: createCollectionParams.name,
+        sourceType,
+        sourceName: createCollectionParams.name,
+        result: 'queued',
+        insertLen: String(result.results.insertLen)
+      }
+    }).catch((error) => {
+      logger.error('Failed to write dataset import audit log', { error, datasetId: dataset._id });
+    });
   }
-  return mongoSessionRun(fn);
+
+  return result;
 };
 
 export type CreateOneCollectionParams = ApiCreateDatasetCollectionParams & {

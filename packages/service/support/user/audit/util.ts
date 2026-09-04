@@ -15,11 +15,19 @@ import { retryFn } from '@fastgpt/global/common/system/utils';
 const logger = getLogger(LogCategories.INFRA.MONGO);
 
 export type AuditLogInput = {
-  tmbId: string;
   teamId: string;
   event: AuditEventEnum | AdminAuditEventEnum;
   params?: Record<string, unknown>;
-};
+} & (
+  | {
+      scope?: 'member';
+      tmbId: string;
+    }
+  | {
+      scope: 'system';
+      tmbId?: never;
+    }
+);
 
 export function getI18nAppType(type: AppTypeEnum): string {
   if (type === AppTypeEnum.folder) return i18nT('account_team:type.Folder');
@@ -73,11 +81,13 @@ export function getI18nInformLevel(level: string): string {
 export function addAuditLog<T extends AuditEventEnum>({
   teamId,
   tmbId,
+  scope,
   event,
   params
 }: {
   tmbId: string;
   teamId: string;
+  scope?: 'member';
   event: T;
   params?: AuditEventParamsType[T];
 }): Promise<void>;
@@ -85,34 +95,100 @@ export function addAuditLog<T extends AuditEventEnum>({
 export function addAuditLog<T extends AdminAuditEventEnum>({
   teamId,
   tmbId,
+  scope,
   event,
   params
 }: {
   tmbId: string;
   teamId: string;
+  scope?: 'member';
   event: T;
   params?: AdminAuditEventParamsType[T];
 }): Promise<void>;
+
 export function addAuditLog<T extends AuditEventEnum | AdminAuditEventEnum>({
   teamId,
-  tmbId,
+  scope,
   event,
   params
 }: {
-  tmbId: string;
   teamId: string;
+  scope: 'system';
+  tmbId?: never;
   event: T;
-  params?: any;
-}): Promise<void> {
+  params?: Record<string, unknown>;
+}): Promise<void>;
+
+export function addAuditLog<T extends AuditEventEnum | AdminAuditEventEnum>({
+  teamId,
+  tmbId,
+  scope = 'member',
+  event,
+  params
+}: AuditLogInput & { event: T; params?: any }): Promise<void> {
   return retryFn(async () => {
     await MongoTeamAudit.create({
-      tmbId: tmbId,
-      teamId: teamId,
+      ...(scope === 'member' ? { tmbId } : {}),
+      teamId,
+      scope,
       event,
       metadata: params
     });
   });
 }
+
+export const hasAuditLogByTaskId = async ({
+  teamId,
+  taskId
+}: {
+  teamId: string;
+  taskId: string;
+}): Promise<boolean> => {
+  try {
+    return await retryFn(async () =>
+      Boolean(
+        await MongoTeamAudit.exists({
+          teamId,
+          event: 'SYNC_DATASET',
+          'metadata.taskId': taskId
+        })
+      )
+    );
+  } catch (error) {
+    logger.error('Dataset sync audit lookup failed', { teamId, taskId, error });
+    return false;
+  }
+};
+
+export const updateAuditLogByTaskId = async ({
+  teamId,
+  taskId,
+  result,
+  counts
+}: {
+  teamId: string;
+  taskId: string;
+  result: string;
+  counts?: Record<string, string>;
+}): Promise<void> => {
+  try {
+    await retryFn(async () => {
+      await MongoTeamAudit.updateMany(
+        { teamId, event: 'SYNC_DATASET', 'metadata.taskId': taskId },
+        {
+          $set: {
+            'metadata.result': result,
+            ...Object.fromEntries(
+              Object.entries(counts ?? {}).map(([key, value]) => [`metadata.${key}`, value])
+            )
+          }
+        }
+      );
+    });
+  } catch (error) {
+    logger.error('Dataset sync audit update failed', { teamId, taskId, error });
+  }
+};
 
 /** 批量写入审计日志，保留每个变更对象一条日志的展示粒度。 */
 export const addAuditLogs = async (logs: AuditLogInput[]): Promise<void> => {
@@ -121,9 +197,10 @@ export const addAuditLogs = async (logs: AuditLogInput[]): Promise<void> => {
   try {
     await retryFn(async () => {
       await MongoTeamAudit.insertMany(
-        logs.map(({ tmbId, teamId, event, params }) => ({
-          tmbId,
+        logs.map(({ tmbId, teamId, scope = 'member', event, params }) => ({
+          ...(scope === 'member' ? { tmbId } : {}),
           teamId,
+          scope,
           event,
           metadata: params
         })),

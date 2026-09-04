@@ -16,6 +16,8 @@ import type { DatasetDataSchemaType } from '@fastgpt/global/core/dataset/type';
 import { sanitizeCsvField } from '@fastgpt/service/common/file/csv';
 import { ExportDatasetQuerySchema } from '@fastgpt/global/openapi/core/dataset/api';
 import { parseApiInput } from '@fastgpt/service/common/zod/requestParseError';
+import { addAuditLog, getI18nDatasetType } from '@fastgpt/service/support/user/audit/util';
+import { AuditEventEnum } from '@fastgpt/global/support/user/audit/constants';
 
 const logger = getLogger(LogCategories.MODULE.DATASET.DATA);
 
@@ -36,7 +38,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
   const { datasetId } = parseApiInput({ req, querySchema: ExportDatasetQuerySchema }).query;
 
   // 凭证校验
-  const { teamId, dataset } = await authDataset({
+  const { teamId, tmbId, dataset } = await authDataset({
     req,
     authToken: true,
     datasetId,
@@ -108,6 +110,24 @@ async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
     readStream: cursor
   });
 
+  let exportedCount = 0;
+  let auditFinished = false;
+  const recordExportAudit = (result: 'success' | 'failed') => {
+    if (auditFinished) return;
+    auditFinished = true;
+    void addAuditLog({
+      teamId,
+      tmbId,
+      event: AuditEventEnum.EXPORT_DATASET,
+      params: {
+        datasetName: dataset.name,
+        datasetType: getI18nDatasetType(dataset.type),
+        result,
+        count: String(exportedCount)
+      }
+    }).catch(() => undefined);
+  };
+
   write(`\uFEFF${headers.join(',')}`);
 
   cursor.on('data', (doc: DataItemType) => {
@@ -121,15 +141,18 @@ async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
       : [];
 
     write(`\n${[sanitizedQ, sanitizedA, ...sanitizedIndexes, ...sanitizedMetadata].join(',')}`);
+    exportedCount += 1;
   });
 
   cursor.on('end', () => {
     cursor.close();
+    recordExportAudit('success');
     res.end();
   });
 
   cursor.on('error', (err) => {
     logger.error(`export dataset error`, { error: err });
+    recordExportAudit('failed');
     res.status(500);
     res.end();
   });

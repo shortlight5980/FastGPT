@@ -19,6 +19,8 @@ import { replaceS3KeyToPreviewUrl } from '@fastgpt/service/core/dataset/utils';
 import { addDays } from 'date-fns';
 import { ExportCollectionBodySchema } from '@fastgpt/global/openapi/core/dataset/collection/api';
 import { parseApiInput } from '@fastgpt/service/common/zod/requestParseError';
+import { addAuditLog, getI18nDatasetType } from '@fastgpt/service/support/user/audit/util';
+import { AuditEventEnum } from '@fastgpt/global/support/user/audit/constants';
 const logger = getLogger(LogCategories.MODULE.DATASET.COLLECTION);
 
 async function handler(req: ApiRequestProps, res: NextApiResponse) {
@@ -117,6 +119,23 @@ async function handler(req: ApiRequestProps, res: NextApiResponse) {
     res,
     readStream: cursor
   });
+  let exportedCount = 0;
+  let auditFinished = false;
+  const recordExportAudit = (result: 'success' | 'failed') => {
+    if (auditFinished) return;
+    auditFinished = true;
+    void addAuditLog({
+      teamId: String(userTeamId),
+      tmbId,
+      event: AuditEventEnum.EXPORT_DATASET_CONTENT,
+      params: {
+        datasetName: collection.dataset.name,
+        collectionName: collection.name,
+        result,
+        count: String(exportedCount)
+      }
+    }).catch(() => undefined);
+  };
 
   write(`\uFEFFq,a`);
 
@@ -130,6 +149,7 @@ async function handler(req: ApiRequestProps, res: NextApiResponse) {
       ]);
 
       write(`\n${sanitizedQ},${sanitizedA}`);
+      exportedCount += 1;
     } catch (error) {
       logger.error(`export usage error`, { error });
       cursor.destroy();
@@ -141,11 +161,13 @@ async function handler(req: ApiRequestProps, res: NextApiResponse) {
 
   cursor.on('end', () => {
     cursor.close();
+    recordExportAudit('success');
     res.end();
   });
 
   cursor.on('error', (err) => {
     logger.error(`export usage error`, { error: err });
+    recordExportAudit('failed');
     res.status(500);
     res.end();
   });

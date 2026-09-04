@@ -145,7 +145,8 @@ async function handler(req: ApiRequestProps): Promise<CreateDatasetWithFilesResp
             indexSize: 512,
             customPdfParse: false
           },
-          session
+          session,
+          audit: false
         });
       }
 
@@ -166,6 +167,20 @@ async function handler(req: ApiRequestProps): Promise<CreateDatasetWithFilesResp
       tmbId,
       uid: userId
     });
+
+    // The transaction already completed; keep audit persistence out of its latency budget.
+    void addAuditLog({
+      teamId,
+      tmbId,
+      event: AuditEventEnum.IMPORT_DATASET_CONTENT,
+      params: {
+        datasetName: name,
+        collectionName: `${files.length} files`,
+        sourceType: 'file',
+        result: 'queued',
+        insertLen: String(files.length)
+      }
+    }).catch(() => undefined);
 
     (async () => {
       addAuditLog({

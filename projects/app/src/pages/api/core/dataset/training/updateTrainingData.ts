@@ -14,6 +14,8 @@ import {
 } from '@fastgpt/global/openapi/core/dataset/training/api';
 import { parseApiInput } from '@fastgpt/service/common/zod/requestParseError';
 import { finalErrorTrainingMatch } from '@fastgpt/service/core/dataset/training/query';
+import { addAuditLog } from '@fastgpt/service/support/user/audit/util';
+import { AuditEventEnum } from '@fastgpt/global/support/user/audit/constants';
 
 async function handler(req: ApiRequestProps): Promise<UpdateTrainingDataResponse> {
   const body = parseApiInput({ req, bodySchema: UpdateTrainingDataBodySchema }).body;
@@ -22,7 +24,7 @@ async function handler(req: ApiRequestProps): Promise<UpdateTrainingDataResponse
   if (!body.dataId) {
     const retryMatch = await (async () => {
       if (body.collectionId) {
-        const { collection } = await authDatasetCollection({
+        const { collection, teamId, tmbId } = await authDatasetCollection({
           req,
           authToken: true,
           authApiKey: true,
@@ -31,13 +33,16 @@ async function handler(req: ApiRequestProps): Promise<UpdateTrainingDataResponse
         });
 
         return {
-          teamId: collection.teamId,
+          teamId,
+          tmbId,
           datasetId: collection.datasetId,
-          collectionId: collection._id
+          collectionId: collection._id,
+          datasetName: collection.dataset.name,
+          collectionName: collection.name
         };
       }
 
-      const { teamId, dataset } = await authDataset({
+      const { teamId, tmbId, dataset } = await authDataset({
         req,
         authToken: true,
         authApiKey: true,
@@ -47,11 +52,14 @@ async function handler(req: ApiRequestProps): Promise<UpdateTrainingDataResponse
 
       return {
         teamId,
-        datasetId: dataset._id
+        datasetId: dataset._id,
+        tmbId,
+        datasetName: dataset.name,
+        collectionName: undefined
       };
     })();
 
-    await MongoDatasetTraining.updateMany(
+    const result = await MongoDatasetTraining.updateMany(
       {
         ...retryMatch,
         ...finalErrorTrainingMatch
@@ -62,6 +70,19 @@ async function handler(req: ApiRequestProps): Promise<UpdateTrainingDataResponse
         lockTime: new Date('2000')
       }
     );
+    void Promise.resolve(
+      addAuditLog({
+        teamId: retryMatch.teamId,
+        tmbId: retryMatch.tmbId,
+        event: AuditEventEnum.RETRY_TRAINING,
+        params: {
+          datasetName: retryMatch.datasetName,
+          ...(retryMatch.collectionName ? { collectionName: retryMatch.collectionName } : {}),
+          count: String(result.modifiedCount),
+          result: 'processing'
+        }
+      })
+    ).catch(() => undefined);
     return UpdateTrainingDataResponseSchema.parse(undefined);
   }
 
@@ -73,7 +94,7 @@ async function handler(req: ApiRequestProps): Promise<UpdateTrainingDataResponse
     return Promise.reject('data not found');
   }
 
-  const { collection } = await authDatasetCollection({
+  const { collection, tmbId } = await authDatasetCollection({
     req,
     authToken: true,
     authApiKey: true,
@@ -117,6 +138,18 @@ async function handler(req: ApiRequestProps): Promise<UpdateTrainingDataResponse
       lockTime: new Date('2000')
     });
   }
+
+  void addAuditLog({
+    teamId: String(collection.teamId),
+    tmbId,
+    event: AuditEventEnum.RETRY_TRAINING,
+    params: {
+      datasetName: collection.dataset.name,
+      collectionName: collection.name,
+      count: '1',
+      result: 'processing'
+    }
+  }).catch(() => undefined);
 
   return UpdateTrainingDataResponseSchema.parse(undefined);
 }

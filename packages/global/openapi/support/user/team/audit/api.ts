@@ -54,8 +54,8 @@ export const AuditListItemSchema = z
         z.string(),
         z.preprocess(
           (value) => (value instanceof Date ? value.toISOString() : value),
-          z.union([z.string(), z.array(z.string())]).meta({
-            description: '操作附加信息值，支持字符串或字符串数组'
+          z.union([z.string(), z.number(), z.array(z.string())]).meta({
+            description: '操作附加信息值，支持字符串、数字或字符串数组'
           })
         )
       )

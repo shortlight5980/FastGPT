@@ -1,5 +1,10 @@
 import z from 'zod';
 
+export const DeleteDatasetCollectionTagQuerySchema = z.object({
+  id: z.string().meta({ description: '标签 ID' }),
+  datasetId: z.string().meta({ description: '数据集 ID' })
+});
+
 /* ============================================================================
  * API: 创建集合标签
  * Route: POST /proApi/core/dataset/tag/create

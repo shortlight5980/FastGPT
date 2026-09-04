@@ -19,6 +19,8 @@ import {
 import { uniqueDatasetDataMarkdownImageUrls } from '@fastgpt/service/core/dataset/data/utils';
 import { TrainingModeEnum } from '@fastgpt/global/core/dataset/constants';
 import { type ApiRequestProps } from '@fastgpt/next/type';
+import { addAuditLog } from '@fastgpt/service/support/user/audit/util';
+import { AuditEventEnum } from '@fastgpt/global/support/user/audit/constants';
 import { OwnerPermissionVal } from '@fastgpt/global/support/permission/constant';
 import { parseApiInput } from '@fastgpt/service/common/zod/requestParseError';
 import {
@@ -199,6 +201,20 @@ async function handler(req: ApiRequestProps): Promise<RebuildEmbeddingResponse> 
       }
     } catch {}
   }
+
+  void Promise.resolve(
+    addAuditLog({
+      teamId,
+      tmbId,
+      event: AuditEventEnum.REBUILD_DATASET_INDEX,
+      params: {
+        datasetName: dataset.name,
+        oldModel: String(dataset.vectorModelId ?? ''),
+        newModel: vectorModelData.modelId,
+        result: 'processing'
+      }
+    })
+  ).catch(() => undefined);
 
   return RebuildEmbeddingResponseSchema.parse(undefined);
 }
