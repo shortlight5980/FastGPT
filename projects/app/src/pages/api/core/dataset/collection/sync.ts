@@ -9,6 +9,8 @@ import {
   SyncCollectionResponseSchema,
   type SyncCollectionResponseType
 } from '@fastgpt/global/openapi/core/dataset/collection/api';
+import { addAuditLog, getI18nDatasetType } from '@fastgpt/service/support/user/audit/util';
+import { AuditEventEnum } from '@fastgpt/global/support/user/audit/constants';
 
 /*
   Collection sync
@@ -21,7 +23,7 @@ import {
 async function handler(req: ApiRequestProps): Promise<SyncCollectionResponseType> {
   const { collectionId } = parseApiInput({ req, bodySchema: SyncCollectionBodySchema }).body;
 
-  const { collection } = await authDatasetCollection({
+  const { collection, teamId, tmbId } = await authDatasetCollection({
     req,
     authToken: true,
     authApiKey: true,
@@ -29,7 +31,23 @@ async function handler(req: ApiRequestProps): Promise<SyncCollectionResponseType
     per: WritePermissionVal
   });
 
-  return SyncCollectionResponseSchema.parse(await syncCollection(collection));
+  const result = SyncCollectionResponseSchema.parse(await syncCollection(collection));
+
+  void addAuditLog({
+    teamId,
+    tmbId,
+    scope: 'member',
+    event: AuditEventEnum.SYNC_DATASET,
+    params: {
+      datasetName: collection.dataset.name,
+      datasetType: getI18nDatasetType(collection.dataset.type),
+      scope: 'member',
+      result,
+      taskId: collectionId
+    }
+  }).catch(() => undefined);
+
+  return result;
 }
 
 export default NextAPI(handler);

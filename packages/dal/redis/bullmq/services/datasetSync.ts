@@ -5,6 +5,9 @@ import { DatasetStatusEnum } from '@fastgpt/global/core/dataset/constants';
 
 export type DatasetSyncJobData = {
   datasetId: string;
+  scope?: 'member' | 'system';
+  tmbId?: string;
+  taskId?: string;
 };
 
 const repeatDuration = 24 * 60 * 60 * 1000;
@@ -40,7 +43,10 @@ export class DatasetSyncMQService {
   /** 投递以 datasetId 去重的同步任务。 */
   addJob(data: DatasetSyncJobData) {
     const datasetId = String(data.datasetId);
-    return this.getQueue().add(datasetId, data, { deduplication: { id: datasetId } });
+    return this.getQueue().add(datasetId, data, {
+      ...(data.taskId ? { jobId: data.taskId } : {}),
+      deduplication: { id: datasetId }
+    });
   }
 
   /** 将 BullMQ 状态转换为业务侧 dataset sync 状态。 */
@@ -60,7 +66,7 @@ export class DatasetSyncMQService {
     if (jobState === 'failed' || jobState === 'unknown') {
       return { status: DatasetStatusEnum.error, errorMsg: job.failedReason };
     }
-    if (['waiting-children', 'waiting'].includes(jobState)) {
+    if (['waiting-children', 'waiting', 'delayed', 'prioritized'].includes(jobState)) {
       return { status: DatasetStatusEnum.waiting, errorMsg: undefined };
     }
     if (jobState === 'active') {

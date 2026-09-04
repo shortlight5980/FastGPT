@@ -227,7 +227,7 @@ export const syncResourceTreePermissions = async ({
   );
 
   if (affectedCollaborators.length === 0) {
-    return;
+    return 0;
   }
 
   const allDescendantIds: string[] = [];
@@ -253,7 +253,7 @@ export const syncResourceTreePermissions = async ({
   }
 
   if (allDescendantIds.length === 0) {
-    return;
+    return 0;
   }
 
   const permissionRows = await resourcePermissionRepo.findByResourceIdsAndCollaborators({
@@ -360,6 +360,8 @@ export const syncResourceTreePermissions = async ({
       session
     });
   }
+
+  return allDescendantIds.length;
 };
 
 /**
@@ -511,7 +513,7 @@ export const resumeResourcePermissionInheritance = async ({
       collaborators: newResourceCollaborators,
       session: activeSession
     });
-    await syncResourceTreePermissions({
+    const affectedDescendantCount = await syncResourceTreePermissions({
       resource,
       resourceModel,
       resourceType,
@@ -524,6 +526,8 @@ export const resumeResourcePermissionInheritance = async ({
       { inheritPermission: true },
       { session: activeSession }
     );
+
+    return { affectedResourceCount: affectedDescendantCount + 1 };
   };
 
   return session ? fn(session) : mongoSessionRun(fn);

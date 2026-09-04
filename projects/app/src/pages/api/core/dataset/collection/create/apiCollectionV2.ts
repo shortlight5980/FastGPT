@@ -21,6 +21,11 @@ import { RootCollectionId } from '@fastgpt/global/core/dataset/collection/consta
 import type { DatasetPermission } from '@fastgpt/global/support/permission/dataset/controller';
 import { checkDatasetIndexLimit } from '@fastgpt/service/support/permission/teamLimit';
 import { parseApiInput } from '@fastgpt/service/common/zod/requestParseError';
+import { addAuditLog } from '@fastgpt/service/support/user/audit/util';
+import { AuditEventEnum } from '@fastgpt/global/support/user/audit/constants';
+import { getLogger, LogCategories } from '@fastgpt/service/common/logger';
+
+const logger = getLogger(LogCategories.MODULE.DATASET.COLLECTION);
 
 async function handler(req: ApiRequestProps<CreateApiCollectionV2BodyType>) {
   const body = parseApiInput({ req, bodySchema: CreateApiCollectionV2BodySchema }).body;
@@ -125,7 +130,7 @@ export const createApiDatasetCollection = async ({
       !existApiFileIdSet.has(item.id) && array.findIndex((file) => file.id === item.id) === index
   );
 
-  return mongoSessionRun(async (session) => {
+  const result = await mongoSessionRun(async (session) => {
     for await (const file of createFiles) {
       // Create folder
       if (file.hasChild && file.type === 'folder') {
@@ -156,9 +161,28 @@ export const createApiDatasetCollection = async ({
             },
             customPdfParse
           },
-          session
+          session,
+          audit: false
         });
       }
     }
   });
+
+  void addAuditLog({
+    teamId,
+    tmbId,
+    scope: 'member',
+    event: AuditEventEnum.IMPORT_DATASET_CONTENT,
+    params: {
+      datasetName: dataset.name,
+      collectionName: `${createFiles.length} API files`,
+      sourceType: 'api',
+      result: 'queued',
+      insertLen: String(createFiles.length)
+    }
+  }).catch((error) => {
+    logger.error('Failed to write API dataset import audit log', { error, datasetId: dataset._id });
+  });
+
+  return result;
 };

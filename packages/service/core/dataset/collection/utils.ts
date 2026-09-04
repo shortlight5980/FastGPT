@@ -196,7 +196,8 @@ export const syncCollection = async (collection: CollectionWithDatasetType) => {
             datasetId: collection.datasetId,
             tags: collection.tags
           })
-        }
+        },
+        audit: false
       });
     });
 

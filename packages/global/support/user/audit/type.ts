@@ -1,11 +1,15 @@
 import type { SourceMemberType } from '../type';
 import type { AuditEventEnum } from './constants';
+
+export type TeamAuditScope = 'member' | 'system';
+
 export type TeamAuditSchemaType = {
   _id: string;
-  tmbId: string;
+  tmbId?: string;
   teamId: string;
   timestamp: Date;
   event: `${AuditEventEnum}`;
+  scope?: TeamAuditScope;
   metadata?: Record<string, string>;
 };
 export type TeamAuditListItemType = {
