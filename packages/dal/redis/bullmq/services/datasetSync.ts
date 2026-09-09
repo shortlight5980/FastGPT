@@ -5,6 +5,7 @@ import { DatasetStatusEnum } from '@fastgpt/global/core/dataset/constants';
 
 export type DatasetSyncJobData = {
   datasetId: string;
+  teamId?: string;
   scope?: 'member' | 'system';
   tmbId?: string;
   taskId?: string;

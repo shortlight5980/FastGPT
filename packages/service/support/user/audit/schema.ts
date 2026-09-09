@@ -39,6 +39,21 @@ const TeamAuditSchema = new Schema({
 });
 
 defineIndex(TeamAuditSchema, { key: { teamId: 1, tmbId: 1, event: 1 } });
+defineIndex(TeamAuditSchema, {
+  key: { teamId: 1, event: 1, 'metadata.taskId': 1 },
+  options: {
+    name: 'teamId_1_event_1_metadata.taskId_1_partial',
+    partialFilterExpression: {
+      event: 'SYNC_DATASET',
+      'metadata.taskId': { $exists: true }
+    }
+  }
+});
+// 旧版本创建的是同 key 的完整索引；先创建新索引，再由索引管理器删除旧索引。
+defineIndex(TeamAuditSchema, {
+  key: { teamId: 1, event: 1, 'metadata.taskId': 1 },
+  deprecated: true
+});
 defineIndex(TeamAuditSchema, { key: { timestamp: 1, teamId: 1 } });
 
 export const MongoTeamAudit = getMongoLogModel<TeamAuditSchemaType>(

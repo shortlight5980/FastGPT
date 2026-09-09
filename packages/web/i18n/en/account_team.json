@@ -198,7 +198,7 @@
   "log_details": "Details",
   "log_export_app_chat_log": "【{{name}}】Export a chat history called [{{appName}}] called [{{appType}}]",
   "log_export_bill_records": "【{{name}}】Export the billing record",
-  "log_export_dataset": "[{{name}}] Export [{{datasetType}}] called [{{datasetName}}]",
+  "log_export_dataset": "[{{name}}] Export [{{datasetType}}] called [{{datasetName}}], result: [{{result}}], count: [{{count}}]",
   "log_rebuild_dataset_index": "[{{name}}] rebuilt the index for dataset [{{datasetName}}], result: [{{result}}]",
   "log_export_dataset_content": "[{{name}}] exported content from collection [{{collectionName}}], result: [{{result}}], count: [{{count}}]",
   "log_transfer_team_ownership": "[{{name}}] transferred ownership of team [{{teamName}}] from [{{oldOwnerName}}] to [{{newOwnerName}}]",

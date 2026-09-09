@@ -244,6 +244,46 @@ describe('MongoIndexManager.syncModelIndexes', () => {
       ])
     );
   });
+  it('replaces a legacy same-key index with a renamed partial index', async () => {
+    const schema = new Schema(
+      { teamId: String, event: String, taskId: String },
+      { autoIndex: false }
+    );
+    defineIndex(schema, {
+      key: { teamId: 1, event: 1, taskId: 1 },
+      options: {
+        name: 'teamId_1_event_1_taskId_1_partial',
+        partialFilterExpression: { event: 'SYNC_DATASET', taskId: { $exists: true } }
+      }
+    });
+    defineDeprecatedTestIndexes(schema, [
+      {
+        indexName: 'teamId_1_event_1_taskId_1',
+        key: { teamId: 1, event: 1, taskId: 1 }
+      }
+    ]);
+    const model = createModel({ schema, prefix: 'AuditIndexMigration' });
+    await model.collection.createIndex(
+      { teamId: 1, event: 1, taskId: 1 },
+      { name: 'teamId_1_event_1_taskId_1' }
+    );
+
+    await MongoIndexManager.syncModelIndexes({ model, logger });
+
+    const indexes = await model.collection.indexes();
+    expect(indexes).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: 'teamId_1_event_1_taskId_1' })])
+    );
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'teamId_1_event_1_taskId_1_partial',
+          key: { teamId: 1, event: 1, taskId: 1 },
+          partialFilterExpression: { event: 'SYNC_DATASET', taskId: { $exists: true } }
+        })
+      ])
+    );
+  });
 });
 
 describe('MongoIndexManager.cleanupModelDeprecatedIndexes', () => {

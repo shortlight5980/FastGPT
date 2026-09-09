@@ -142,23 +142,26 @@ export function addAuditLog<T extends AuditEventEnum | AdminAuditEventEnum>({
 
 export const hasAuditLogByTaskId = async ({
   teamId,
-  taskId
+  taskId,
+  scope
 }: {
   teamId: string;
   taskId: string;
+  scope: 'member' | 'system';
 }): Promise<boolean> => {
   try {
     return await retryFn(async () =>
       Boolean(
         await MongoTeamAudit.exists({
           teamId,
+          scope,
           event: 'SYNC_DATASET',
           'metadata.taskId': taskId
         })
       )
     );
   } catch (error) {
-    logger.error('Dataset sync audit lookup failed', { teamId, taskId, error });
+    logger.error('Dataset sync audit lookup failed', { teamId, taskId, scope, error });
     return false;
   }
 };
@@ -166,18 +169,20 @@ export const hasAuditLogByTaskId = async ({
 export const updateAuditLogByTaskId = async ({
   teamId,
   taskId,
+  scope,
   result,
   counts
 }: {
   teamId: string;
   taskId: string;
+  scope: 'member' | 'system';
   result: string;
   counts?: Record<string, string>;
 }): Promise<void> => {
   try {
     await retryFn(async () => {
       await MongoTeamAudit.updateMany(
-        { teamId, event: 'SYNC_DATASET', 'metadata.taskId': taskId },
+        { teamId, scope, event: 'SYNC_DATASET', 'metadata.taskId': taskId },
         {
           $set: {
             'metadata.result': result,
